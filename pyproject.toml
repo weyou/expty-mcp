@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "termio-mcp"
+version = "0.1.0"
+description = "High-performance Model Context Protocol (MCP) server for interactive PTY processes, SSH, and Serial streams with zero-loss continuous ingestion and atomic Expect state machine."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "weyou", email = "weyou.dev@gmail.com" }
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "terminal",
+    "pty",
+    "expect",
+    "ssh",
+    "serial",
+    "interactive",
+    "claude",
+    "cursor",
+    "antigravity"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+    "Topic :: Terminals",
+    "Topic :: System :: Shells"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "ptyprocess>=0.7.0",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/weyou/termio-mcp"
+Repository = "https://github.com/weyou/termio-mcp"
+Issues = "https://github.com/weyou/termio-mcp/issues"
+
+[project.scripts]
+termio-mcp = "termio_mcp.__main__:main"
+termio = "termio_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/termio_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
