@@ -207,20 +207,29 @@ def termio_read_buffer(
 @mcp.tool()
 def termio_get_history(
     limit: int = 50,
+    with_timestamps: bool = True,
     session_id: str | None = None,
 ) -> list[str]:
     """
     Retrieve recent chronological line history captured by the background daemon.
 
+    By default, each line is prefixed with an accurate wall-clock timestamp
+    [YYYY-MM-DD HH:MM:SS.mmm] captured at the transport reception level.
+    If a line was split across packets with a pause of >= 50ms (e.g. driver pause,
+    delayed response), the continuation line is prefixed with '↳ ' and tagged with
+    its own timestamp for precise correlation against test framework logs.
+
     Args:
         limit: Number of recent lines to retrieve (default: 50).
+        with_timestamps: If True (default), attaches wall-clock timestamps and continuation
+            symbols on the fly. If False, returns raw clean text lines without timestamps.
         session_id: Target session ID (defaults to currently active session).
     """
     try:
         _, sess = manager.get_session(session_id)
     except KeyError as e:
         return [f"Error: {e}"]
-    return sess.get_history(limit=limit)
+    return sess.get_history(limit=limit, with_timestamps=with_timestamps)
 
 
 @mcp.tool()

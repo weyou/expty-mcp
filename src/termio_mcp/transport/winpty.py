@@ -52,7 +52,7 @@ class WinPtyTransport(BaseTransport):
             dimensions=(rows, cols),
         )
         self._closed = False
-        self._read_queue: queue.Queue[bytes | None] = queue.Queue()
+        self._read_queue: queue.Queue[tuple[float, bytes] | None] = queue.Queue()
         self._reader_thread = threading.Thread(
             target=self._worker_loop,
             name=f"WinPtyReader-{self.proc.pid}",
@@ -61,12 +61,18 @@ class WinPtyTransport(BaseTransport):
         self._reader_thread.start()
 
     def _worker_loop(self) -> None:
-        """Dedicated background reader: pulls from blocking proc.read into queue."""
+        """
+        Dedicated background reader: pulls from blocking proc.read into queue
+        with precise arrival timestamp.
+        """
+        import time
+
         while not self._closed:
             try:
                 text = self.proc.read(4096)
+                ts = time.time()
                 if text:
-                    self._read_queue.put(text.encode("utf-8", errors="replace"))
+                    self._read_queue.put((ts, text.encode("utf-8", errors="replace")))
                 elif not self.proc.isalive():
                     break
             except Exception:
@@ -76,6 +82,14 @@ class WinPtyTransport(BaseTransport):
         self._read_queue.put(None)
 
     def read(self, max_bytes: int = 4096, timeout: float = 0.1) -> bytes:
+        data, _ = self.read_with_timestamp(max_bytes=max_bytes, timeout=timeout)
+        return data
+
+    def read_with_timestamp(
+        self, max_bytes: int = 4096, timeout: float = 0.1
+    ) -> tuple[bytes, float]:
+        import time
+
         if self._closed:
             raise EOFError("Windows ConPTY process has been closed")
 
@@ -83,16 +97,17 @@ class WinPtyTransport(BaseTransport):
             item = self._read_queue.get(timeout=timeout)
             if item is None:
                 raise EOFError("Windows ConPTY process has terminated")
-            if len(item) > max_bytes:
-                # Return prefix and push back remnant
-                prefix = item[:max_bytes]
-                self._read_queue.put(item[max_bytes:])
-                return prefix
-            return item
+            ts, data = item
+            if len(data) > max_bytes:
+                # Return prefix and push back remnant with same original timestamp
+                prefix = data[:max_bytes]
+                self._read_queue.put((ts, data[max_bytes:]))
+                return prefix, ts
+            return data, ts
         except queue.Empty:
             if not self.proc.isalive():
                 raise EOFError("Windows ConPTY process has terminated")
-            return b""
+            return b"", time.time()
 
     def write(self, data: bytes) -> int:
         if self._closed or not self.proc.isalive():

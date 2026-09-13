@@ -99,3 +99,70 @@ def test_session_close_joins_reader():
     session.close()
     # After close, reader thread should have stopped
     assert not session.reader_thread.is_alive()
+
+
+def test_session_history_timestamps_and_50ms_rule():
+    """
+    Test the 50ms inter-packet continuation rule:
+    1. Pauses < 50ms merge into a single line, discarding the second timestamp.
+    2. Pauses >= 50ms split into two lines, tagging the second with '↳ ' and its own timestamp.
+    3. Ensure clean_buffer and raw_buffer remain 100% unpolluted.
+    4. Ensure with_timestamps=False returns purely raw clean text.
+    """
+    from unittest.mock import MagicMock
+
+    from termio_mcp.transport.base import BaseTransport
+
+    mock_transport = MagicMock(spec=BaseTransport)
+    mock_transport.is_alive.return_value = True
+    mock_transport.read_with_timestamp.return_value = (b"", time.time())
+    mock_transport.display_name = "mock"
+
+    session = InteractiveSession(transport=mock_transport)
+
+    t0 = 1000.0
+    # Case 1: Packet A arriving at t0, incomplete line (no newline)
+    session._append_data(b"Loading kernel modules...", timestamp=t0)
+
+    # Case 1.1: Packet B arriving 20ms later (< 50ms), completes the line
+    t1 = t0 + 0.02
+    session._append_data(b" [OK]\n", timestamp=t1)
+
+    # Case 2: Packet C arriving at t2, incomplete line
+    t2 = t0 + 1.0
+    session._append_data(b"Mounting rootfs...", timestamp=t2)
+
+    # Case 2.1: Packet D arriving 80ms later (>= 50ms), delayed continuation
+    t3 = t2 + 0.08
+    session._append_data(b" done\n", timestamp=t3)
+
+    # 1. Verify that buffers are 100% pure (no timestamps, no '↳')
+    clean_buf = session.read_buffer()
+    assert clean_buf == "Loading kernel modules... [OK]\nMounting rootfs... done\n"
+    assert "↳" not in clean_buf
+    assert "1000" not in clean_buf
+
+    # 2. Verify with_timestamps=False (pure clean text lines)
+    raw_history = session.get_history(limit=10, with_timestamps=False)
+    assert raw_history == [
+        "Loading kernel modules... [OK]",
+        "Mounting rootfs...",
+        "done",
+    ]
+
+    # 3. Verify with_timestamps=True (rendered formatting)
+    rendered_history = session.get_history(limit=10, with_timestamps=True)
+    assert len(rendered_history) == 3
+
+    # First entry: merged < 50ms, timestamp is t0, no continuation prefix
+    assert "Loading kernel modules... [OK]" in rendered_history[0]
+    assert "↳" not in rendered_history[0]
+
+    # Second entry: timestamp is t2, no continuation prefix
+    assert "Mounting rootfs..." in rendered_history[1]
+    assert "↳" not in rendered_history[1]
+
+    # Third entry: split >= 50ms, timestamp is t3, WITH continuation prefix '↳ '
+    assert "↳ done" in rendered_history[2]
+
+    session.close()

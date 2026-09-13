@@ -16,6 +16,16 @@ class BaseTransport(ABC):
         """
         pass
 
+    def read_with_timestamp(self, max_bytes: int = 4096) -> tuple[bytes, float]:
+        """
+        Read data and capture the exact wall-clock timestamp (time.time()) when data was received.
+        Subclasses can override to capture the timestamp directly from internal worker threads.
+        """
+        import time
+
+        data = self.read(max_bytes=max_bytes)
+        return data, time.time()
+
     @abstractmethod
     def write(self, data: bytes) -> int:
         """

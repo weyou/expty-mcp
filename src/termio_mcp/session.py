@@ -1,14 +1,29 @@
+import datetime
 import logging
 import re
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 from .pipeline import decode_escape_sequences, strip_ansi
 from .transport.base import BaseTransport
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HistoryEntry:
+    """
+    Chronological line entry with clean text and precise receipt timestamp.
+    Clean text is stored 100% unpolluted; timestamps and continuation markers
+    are only attached during rendering.
+    """
+
+    timestamp: float
+    text: str
+    is_continuation: bool = False
 
 
 class InteractiveSession:
@@ -30,12 +45,15 @@ class InteractiveSession:
 
         self.clean_buffer = ""
         self.raw_buffer = ""
-        self.history: deque[str] = deque(maxlen=history_maxlen)
+        self.history: deque[HistoryEntry] = deque(maxlen=history_maxlen)
         self._truncation_count = 0
         self.last_error: str | None = None
 
         # Pending incomplete ANSI escape fragment from previous chunk
         self._ansi_pending = ""
+
+        # Pending incomplete line fragment: tuple of (text, timestamp, is_continuation)
+        self._pending_fragment: tuple[str, float, bool] | None = None
 
         # Start continuous ingestion thread
         self.reader_thread = threading.Thread(
@@ -52,17 +70,17 @@ class InteractiveSession:
                 if not self.transport.is_alive():
                     # Drain any remaining bytes before pausing
                     try:
-                        chunk = self.transport.read(4096)
+                        chunk, ts = self.transport.read_with_timestamp(4096)
                         if chunk:
-                            self._append_data(chunk)
+                            self._append_data(chunk, timestamp=ts)
                     except Exception:
                         pass
                     time.sleep(0.1)
                     continue
 
-                chunk = self.transport.read(4096)
+                chunk, ts = self.transport.read_with_timestamp(4096)
                 if chunk:
-                    self._append_data(chunk)
+                    self._append_data(chunk, timestamp=ts)
                 else:
                     time.sleep(0.01)
 
@@ -74,8 +92,12 @@ class InteractiveSession:
                 logger.debug("Reader loop exception: %s", e)
                 time.sleep(0.05)
 
-    def _append_data(self, raw_bytes: bytes) -> None:
-        """Decode and append chunk to raw buffer, clean buffer, and line history."""
+    def _append_data(self, raw_bytes: bytes, timestamp: float | None = None) -> None:
+        """
+        Decode and append chunk to raw buffer, clean buffer, and structured line history.
+        Preserves complete data purity in buffers and history storage.
+        """
+        ts = timestamp if timestamp is not None else time.time()
         raw_text = raw_bytes.decode("utf-8", errors="replace")
 
         with self.lock:
@@ -92,10 +114,69 @@ class InteractiveSession:
             if len(self.raw_buffer) > self.max_buffer:
                 self.raw_buffer = self.raw_buffer[-self.max_buffer :]
 
-            for line in clean_text.splitlines():
-                stripped = line.strip()
-                if stripped:
-                    self.history.append(stripped)
+            # Process line segmentation with the 50ms partial-line rule
+            # Split by newline; trailing newline results in an empty last element
+            parts = clean_text.split("\n")
+
+            for i, part in enumerate(parts):
+                is_last_part = (i == len(parts) - 1)
+
+                if i == 0 and self._pending_fragment is not None:
+                    prev_text, prev_ts, prev_cont = self._pending_fragment
+                    delta = ts - prev_ts
+
+                    if delta < 0.05:  # Within 50ms: merge into one line, discard new timestamp
+                        merged_text = prev_text + part
+                        if is_last_part:
+                            # Still not terminated with \n
+                            self._pending_fragment = (merged_text, prev_ts, prev_cont)
+                        else:
+                            # Terminated with \n
+                            if merged_text.strip():
+                                self.history.append(
+                                    HistoryEntry(
+                                        timestamp=prev_ts,
+                                        text=merged_text.strip(),
+                                        is_continuation=prev_cont,
+                                    )
+                                )
+                            self._pending_fragment = None
+                    else:  # >= 50ms: split into two lines, mark second line as continuation
+                        if prev_text.strip():
+                            self.history.append(
+                                HistoryEntry(
+                                    timestamp=prev_ts,
+                                    text=prev_text.strip(),
+                                    is_continuation=prev_cont,
+                                )
+                            )
+                        if is_last_part:
+                            self._pending_fragment = (part, ts, True)
+                        else:
+                            if part.strip():
+                                self.history.append(
+                                    HistoryEntry(
+                                        timestamp=ts,
+                                        text=part.strip(),
+                                        is_continuation=True,
+                                    )
+                                )
+                            self._pending_fragment = None
+                else:
+                    if is_last_part:
+                        if part:  # Incomplete line tail without newline
+                            self._pending_fragment = (part, ts, False)
+                        else:
+                            self._pending_fragment = None
+                    else:
+                        if part.strip():
+                            self.history.append(
+                                HistoryEntry(
+                                    timestamp=ts,
+                                    text=part.strip(),
+                                    is_continuation=False,
+                                )
+                            )
 
     def write(self, data: bytes) -> int:
         """Write raw bytes directly to transport."""
@@ -286,10 +367,39 @@ class InteractiveSession:
                 self.clean_buffer = ""
             return buf
 
-    def get_history(self, limit: int = 50) -> list[str]:
-        """Fetch recent chronological line history."""
+    def get_history(self, limit: int = 50, with_timestamps: bool = True) -> list[str]:
+        """
+        Fetch recent chronological line history.
+        The underlying data is stored 100% clean; timestamps and continuation
+        markers (↳) are only rendered on the fly when with_timestamps is True.
+
+        Args:
+            limit: Maximum number of recent lines to retrieve.
+            with_timestamps: If True, prefixes lines with [YYYY-MM-DD HH:MM:SS.mmm]
+                and prefixes partial continuation lines with '↳ '.
+                If False, returns raw clean text lines without any metadata.
+        """
         with self.lock:
-            return list(self.history)[-limit:]
+            entries = list(self.history)
+            # If there is a trailing pending fragment (e.g. active prompt), include it
+            if self._pending_fragment is not None:
+                p_text, p_ts, p_cont = self._pending_fragment
+                if p_text.strip():
+                    entries.append(
+                        HistoryEntry(timestamp=p_ts, text=p_text.strip(), is_continuation=p_cont)
+                    )
+
+            target = entries[-limit:]
+            if not with_timestamps:
+                return [e.text for e in target]
+
+            results = []
+            for e in target:
+                dt = datetime.datetime.fromtimestamp(e.timestamp)
+                time_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+                prefix = "↳ " if e.is_continuation else ""
+                results.append(f"[{time_str}] {prefix}{e.text}")
+            return results
 
     def close(self) -> None:
         """Stop background worker and close the underlying transport."""

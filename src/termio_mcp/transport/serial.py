@@ -53,13 +53,20 @@ class SerialTransport(BaseTransport):
             raise ConnectionError(f"Failed to open serial port '{self.port}': {e}") from e
 
     def read(self, max_bytes: int = 4096) -> bytes:
+        data, _ = self.read_with_timestamp(max_bytes=max_bytes)
+        return data
+
+    def read_with_timestamp(self, max_bytes: int = 4096) -> tuple[bytes, float]:
+        import time
+
         if not self.ser or not self.ser.is_open:
             raise EOFError(f"Serial port '{self.port}' is closed")
         try:
             in_wait = self.ser.in_waiting
             if in_wait > 0:
-                return self.ser.read(min(in_wait, max_bytes))
-            return b""
+                data = self.ser.read(min(in_wait, max_bytes))
+                return data, time.time()
+            return b"", time.time()
         except (serial.SerialException, OSError) as e:
             raise EOFError(f"Serial read error on '{self.port}': {e}") from e
 

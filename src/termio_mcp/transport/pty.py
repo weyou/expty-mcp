@@ -48,12 +48,21 @@ class PtyTransport(BaseTransport):
         self._closed = False
 
     def read(self, max_bytes: int = 4096, timeout: float = 0.05) -> bytes:
+        data, _ = self.read_with_timestamp(max_bytes=max_bytes, timeout=timeout)
+        return data
+
+    def read_with_timestamp(
+        self, max_bytes: int = 4096, timeout: float = 0.05
+    ) -> tuple[bytes, float]:
+        import time
+
         if self._closed or not self.proc.isalive():
             # Check if there are leftover bytes before raising EOF
             try:
                 r, _, _ = select.select([self.fd], [], [], 0)
                 if r:
-                    return os.read(self.fd, max_bytes)
+                    data = os.read(self.fd, max_bytes)
+                    return data, time.time()
             except Exception:
                 pass
             raise EOFError("PTY process has terminated")
@@ -61,8 +70,9 @@ class PtyTransport(BaseTransport):
         try:
             r, _, _ = select.select([self.fd], [], [], timeout)
             if not r:
-                return b""
-            return os.read(self.fd, max_bytes)
+                return b"", time.time()
+            data = os.read(self.fd, max_bytes)
+            return data, time.time()
         except OSError as e:
             # On Linux, reading from a closed PTY master returns EIO
             if e.errno == errno.EIO:
