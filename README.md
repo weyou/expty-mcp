@@ -5,43 +5,57 @@
 
 **`termio-mcp`** is a high-performance **Model Context Protocol (MCP)** server that equips AI assistants (Claude Code, Cursor, Antigravity, VS Code) with persistent, zero-loss **Interactive PTY Process and Serial Communication** capabilities.
 
-Engineered specifically for **persistent SSH sessions, remote server administration, local shells, REPLs, container debugging, and hardware serial ports (UART/U-Boot)**, featuring a dedicated **Atomic Expect Engine**, continuous background ingestion daemon, and automatic ANSI/echo cleaning pipelines.
+Engineered specifically for **persistent SSH sessions, remote server administration, local shells, REPLs, container debugging, and hardware serial ports (UART/U-Boot)**. It features an **Atomic Expect Engine**, continuous background ingestion daemon, transport-level microsecond timestamping with intelligent 50ms continuation detection, and full cross-chunk ANSI sanitization.
 
 ---
 
-## ✨ Key Features
+## Architecture Design
 
-- ⚡ **Zero-Loss Background Daemon**: Dedicated reader thread continuously ingests bytes into memory in real time—eliminating dropped output during LLM reasoning pauses.
-- 🔌 **Unified PTY & Serial Transports**: Seamlessly spawn local processes (`bash`, `python`, `gdb`), SSH sessions (`ssh user@router`), or connect to physical UART devices (`/dev/ttyUSB0`).
-- 🎯 **Atomic Expect Engine (`termio_expect`)**: Match regex or substring prompt patterns atomically (`['password:', '# ', '>>>']`) with buffer slicing and retention.
-- 🚀 **Prompt-Aware Execution (`termio_exec_expect`)**: Send commands and automatically wait for prompt to return in a single tool call, stripping ANSI color codes and command echo.
-- 🤹 **Multi-Session Management**: Concurrently manage multiple terminal sessions with smart active-session auto-resolution.
-- ⏱️ **Fast Process Exit Detection**: Instantly detects when a child process or SSH connection terminates, returning exit codes immediately without waiting for timeouts.
-- 🔄 **Periodic Injection (`poll_cmd`)**: Inject keepalive characters or autoboot interrupt keys (e.g. spaces for U-Boot) at high frequency during expect wait windows.
-- 🌐 **100% Cross-Platform**: Native POSIX PTY on Linux & macOS (`ptyprocess`), native Windows ConPTY (`pywinpty`), and cross-platform Serial support (`pyserial`).
+<p align="center">
+  <img src="assets/architecture.png" alt="termio-mcp Architecture" width="900">
+</p>
 
 ---
 
-## 🛠️ Available MCP Tools
+## Key Features
+
+- **Zero-Loss Background Daemon**: Dedicated reader daemon continuously ingests bytes into memory in real time—eliminating dropped output during LLM reasoning pauses.
+- **Unified PTY & Serial Transports**: Seamlessly spawn local processes (`bash`, `python`, `gdb`), SSH sessions (`ssh user@router`), or connect to physical UART devices (`/dev/ttyUSB0`, `COM3`).
+- **Accurate Transport-Level Timestamping**: Timestamps are stamped at the moment bytes leave the OS kernel/driver system call, avoiding queue or scheduling jitter.
+- **Smart 50ms Packet Continuation**: 
+  - Packet fragments arriving within `< 50ms` are smoothly merged into a single line.
+  - Fragments arriving after `>= 50ms` (e.g. driver pause, slow command) are split into separate lines tagged with `↳ ` and their own timestamp—enabling effortless correlation against test framework logs (Pytest, RobotFramework).
+- **Atomic Expect Engine (`termio_expect`)**: Match regex or substring prompt patterns atomically (`['password:', '# ', '>>>']`) with buffer slicing and retention.
+- **Prompt-Aware Execution (`termio_exec_expect`)**: Send commands and wait for prompt return in a single call, returning structured JSON results with execution status and duration.
+- **Causal Anchor Preservation**: Preserves command echo in output streams, providing LLMs with an unbroken causal chain for self-correction without regex stripping bugs.
+- **Cross-Chunk ANSI Sanitization**: Intelligently handles split escape sequences (e.g. `\x1b[` in chunk 1 and `31m` in chunk 2), preventing terminal garbage from entering clean buffers.
+- **Thread-Safe Multi-Session Management**: Concurrently manage multiple terminal sessions with strict session guarding and double-checked locking auto-spawn.
+- **Fast Process Exit Detection**: Instantly detects when a child process or SSH connection terminates, returning exit codes immediately without waiting for timeouts.
+- **Periodic Injection (`poll_cmd`)**: Inject keepalive characters or autoboot interrupt keys (e.g. spaces for U-Boot) at high frequency during expect wait windows.
+- **100% Cross-Platform**: Native POSIX PTY on Linux & macOS (`ptyprocess`), leak-free Windows ConPTY worker queue (`pywinpty`), and cross-platform Serial support (`pyserial`).
+
+---
+
+## Available MCP Tools
 
 | Tool | Description |
 | :--- | :--- |
-| **`termio_spawn`** | Spawn a new interactive process (`bash`, `ssh user@host`, `python`, `gdb`, etc.) in a PTY. |
+| **`termio_spawn`** | Spawn a new interactive process (`bash`, `ssh user@host`, `python`, `gdb`, etc.) in a native PTY. |
 | **`termio_serial`** | Connect to a physical or virtual serial port (`/dev/ttyUSB0`, `COM3`). |
-| **`termio_exec_expect`** | Execute command and wait for prompt to return, extracting clean output without echo. |
-| **`termio_expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompts). |
+| **`termio_exec_expect`** | Execute a command and wait for prompt to return, returning structured execution status and clean output. |
+| **`termio_expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompt sync / bootloader interception). |
 | **`termio_send`** | Send raw keys or escape sequences (e.g. `\x03` for Ctrl+C, `\x1b` for Escape, Enter). |
 | **`termio_read_buffer`** | Non-blocking read of newly accumulated stream buffer. |
-| **`termio_get_history`** | Fetch recent line history captured by the background daemon. |
+| **`termio_get_history`** | Fetch recent line history. By default, formats with `[YYYY-MM-DD HH:MM:SS.mmm]` and `↳ ` continuation markers. |
 | **`termio_list_sessions`**| List all active PTY and Serial sessions with runtime health status. |
 | **`termio_switch_session`**| Switch the default active session. |
-| **`termio_close_session`** | Terminate and clean up an active session. |
+| **`termio_close_session`** | Terminate and cleanly shut down an active session. |
 | **`termio_list_ports`** | Enumerate connected physical and virtual serial ports on the host. |
 | **`termio_status`** | Query runtime diagnostics, buffer usage, and transport health. |
 
 ---
 
-## 💡 Practical Examples
+## Practical Examples
 
 ### 1. Persistent SSH Session (No repeated logins)
 
@@ -68,7 +82,27 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 }
 ```
 
-### 2. Interactive Python REPL / Debugger
+### 2. Time-Correlated Log Analysis (Aligning with Test Frameworks)
+
+```json
+// Tool: termio_get_history
+{
+  "limit": 5,
+  "with_timestamps": true
+}
+```
+
+**Output:**
+```text
+[2026-09-13 15:30:45.100] [Kernel] Initializing network interface eth0...
+[2026-09-13 15:30:45.120] [Kernel] PHY driver link speed: 1000Mbps
+[2026-09-13 15:30:45.300] [Kernel] Loading crypto module...
+[2026-09-13 15:30:46.850] ↳ done (took 1550ms)
+[2026-09-13 15:30:46.870] IPQ807x# 
+```
+*Notice how the 1.55-second driver pause is clearly split with `↳ `, immediately pinpointing where execution stalled relative to your test runner logs.*
+
+### 3. Interactive Python REPL / Debugger
 
 ```json
 // Tool: termio_spawn
@@ -83,7 +117,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 }
 ```
 
-### 3. Hardware UART Bootloader Interception
+### 4. Hardware UART Bootloader Interception
 
 ```json
 // Step 1: Open serial port
@@ -105,7 +139,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 ---
 
-## 📦 Installation & Configuration
+## Installation & Configuration
 
 ### Local Installation
 
@@ -114,9 +148,9 @@ cd ~/dev/termio-mcp
 pip install -e .
 ```
 
-### Configuration
+### Client Configuration
 
-#### 1. Claude Desktop
+#### 1. Claude Desktop / Claude Code
 Add to `claude_desktop_config.json`:
 
 ```json
@@ -160,7 +194,7 @@ Add to `.cursor/mcp.json` or Cursor Global Settings:
 
 ---
 
-## 🧪 Testing
+## Testing & Code Quality
 
 ```bash
 cd ~/dev/termio-mcp
@@ -170,6 +204,6 @@ ruff check .
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the [MIT License](LICENSE).
