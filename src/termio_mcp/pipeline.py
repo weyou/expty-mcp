@@ -32,35 +32,57 @@ def decode_escape_sequences(text: str) -> bytes:
     return bytes(result)
 
 
-def strip_ansi(text: str) -> str:
+# Regex to detect a potential incomplete ANSI escape sequence at end of chunk.
+# Matches: ESC at the very end, or ESC followed by a partial CSI/OSC/charset sequence.
+_ANSI_INCOMPLETE_RE = re.compile(
+    r"\x1b"              # ESC character
+    r"(?:"
+    r"\[[\d;?]*[ -/]*"   # Partial CSI (missing final byte)
+    r"|\][^\x07]*"       # Partial OSC (missing BEL or ST)
+    r"|[\(\)]?"          # Partial charset designator
+    r")?"
+    r"$"                 # Must be at end of string
+)
+
+
+def strip_ansi(text: str, pending: str = "") -> tuple[str, str]:
     """
     Strip ANSI escape codes (colors, cursor movements, title bars, bracketed paste)
     from text to provide a clean string for regex pattern matching and LLM presentation.
+
+    Handles cross-chunk truncation: ``pending`` is a leftover fragment from the
+    previous chunk that might form a complete escape sequence when combined with
+    the start of this chunk.
+
+    Returns:
+        A tuple of (cleaned_text, new_pending) where new_pending holds any
+        trailing bytes that look like an incomplete escape sequence.
     """
+    text = pending + text
+
+    # Check for an incomplete ANSI escape at the tail
+    new_pending = ""
+    # Only search in the last 20 chars for performance
+    tail = text[-20:] if len(text) > 20 else text
+    esc_pos = tail.rfind("\x1b")
+    if esc_pos >= 0:
+        # Found an ESC near the end; check if it's part of an incomplete sequence
+        abs_pos = len(text) - len(tail) + esc_pos
+        candidate = text[abs_pos:]
+        # If the candidate doesn't match any complete ANSI pattern, hold it back
+        test_cleaned = _ANSI_CSI_RE.sub("", candidate)
+        test_cleaned = _ANSI_OSC_RE.sub("", test_cleaned)
+        test_cleaned = _ANSI_CHARSET_RE.sub("", test_cleaned)
+        test_cleaned = _ANSI_MISC_RE.sub("", test_cleaned)
+        # If after stripping complete sequences there's still an ESC, it's incomplete
+        if "\x1b" in test_cleaned:
+            new_pending = candidate
+            text = text[:abs_pos]
+
     text = _ANSI_OSC_RE.sub("", text)
     text = _ANSI_CSI_RE.sub("", text)
     text = _ANSI_CHARSET_RE.sub("", text)
     text = _ANSI_MISC_RE.sub("", text)
     # Normalize carriage returns
     text = text.replace("\r\n", "\n").replace("\r", "\n")
-    return text
-
-
-def strip_command_echo(output: str, command: str) -> str:
-    """
-    Remove initial command echo commonly produced by TTY/PTY line discipline.
-    """
-    cmd_clean = command.strip()
-    if not cmd_clean:
-        return output
-
-    lines = output.splitlines(keepends=True)
-    if not lines:
-        return output
-
-    # Check if the first line contains the executed command
-    first_line = lines[0].strip()
-    if first_line == cmd_clean or first_line.endswith(cmd_clean):
-        return "".join(lines[1:]).lstrip("\r\n")
-
-    return output
+    return text, new_pending

@@ -5,7 +5,7 @@ import time
 from collections import deque
 from typing import Any
 
-from .pipeline import decode_escape_sequences, strip_ansi, strip_command_echo
+from .pipeline import decode_escape_sequences, strip_ansi
 from .transport.base import BaseTransport
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,9 @@ class InteractiveSession:
         self.history: deque[str] = deque(maxlen=history_maxlen)
         self._truncation_count = 0
         self.last_error: str | None = None
+
+        # Pending incomplete ANSI escape fragment from previous chunk
+        self._ansi_pending = ""
 
         # Start continuous ingestion thread
         self.reader_thread = threading.Thread(
@@ -74,9 +77,11 @@ class InteractiveSession:
     def _append_data(self, raw_bytes: bytes) -> None:
         """Decode and append chunk to raw buffer, clean buffer, and line history."""
         raw_text = raw_bytes.decode("utf-8", errors="replace")
-        clean_text = strip_ansi(raw_text)
 
         with self.lock:
+            # Use pending fragment from previous chunk to handle cross-chunk ANSI sequences
+            clean_text, self._ansi_pending = strip_ansi(raw_text, self._ansi_pending)
+
             self.raw_buffer += raw_text
             self.clean_buffer += clean_text
 
@@ -97,7 +102,7 @@ class InteractiveSession:
         return self.transport.write(data)
 
     def send(self, text: str, send_enter: bool = False) -> int:
-        """Send formatted text or escape sequences (e.g. \\x03 for Ctrl+C)."""
+        """Send formatted text or escape sequences (e.g. \\\\x03 for Ctrl+C)."""
         encoded = decode_escape_sequences(text)
         if send_enter and not encoded.endswith(b"\r\n") and not encoded.endswith(b"\n"):
             encoded += b"\n"
@@ -207,10 +212,18 @@ class InteractiveSession:
         command: str,
         prompts: list[str] | None = None,
         timeout: float = 8.0,
-    ) -> str:
+    ) -> dict[str, Any]:
         """
-        Execute a shell or REPL command, wait for prompt, and return clean stdout
-        with prompt and local command echo removed.
+        Execute a shell or REPL command, wait for prompt, and return structured result
+        with clean stdout (prompt and local command echo removed).
+
+        Returns a dict with keys:
+            - success (bool): Whether the command completed and a prompt was matched.
+            - output (str): Clean command output with echo and prompt stripped.
+            - timeout (bool): True if the command timed out.
+            - process_exited (bool): True if the process exited before matching.
+            - exit_code (int | None): Process exit code if exited.
+            - elapsed_seconds (float): Wall-clock time taken.
         """
         default_prompts = [
             r"[\$#]\s*$",
@@ -224,20 +237,44 @@ class InteractiveSession:
         res = self.expect(patterns=active_prompts, timeout=timeout, command=command)
 
         if res.get("matched"):
-            output = res.get("before", "")
-            return strip_command_echo(output, command).strip()
+            output = res.get("before", "").strip()
+            return {
+                "success": True,
+                "command": command,
+                "output": output,
+                "timeout": False,
+                "process_exited": False,
+                "exit_code": None,
+                "elapsed_seconds": res.get("elapsed_seconds", 0),
+            }
 
         if res.get("process_exited"):
             exit_code = res.get("exit_code")
-            return (
-                f"Error: Process exited with status {exit_code} while waiting for prompt. "
-                f"Captured output:\n{res.get('output', '')}"
+            # For serial transports, exit_code is always None — show "disconnected"
+            status_msg = (
+                f"exit code {exit_code}" if exit_code is not None else "disconnected"
             )
+            return {
+                "success": False,
+                "command": command,
+                "output": res.get("output", ""),
+                "timeout": False,
+                "process_exited": True,
+                "exit_code": exit_code,
+                "error": f"Process terminated ({status_msg}) while waiting for prompt.",
+                "elapsed_seconds": res.get("elapsed_seconds", 0),
+            }
 
-        return (
-            f"Error: Command timed out after {timeout}s waiting for prompt. "
-            f"Captured output:\n{res.get('output', '')}"
-        )
+        return {
+            "success": False,
+            "command": command,
+            "output": res.get("output", ""),
+            "timeout": True,
+            "process_exited": False,
+            "exit_code": None,
+            "error": f"Command timed out after {timeout}s waiting for prompt.",
+            "elapsed_seconds": res.get("elapsed_seconds", 0),
+        }
 
     def read_buffer(self, clear: bool = False) -> str:
         """Read accumulated text from buffer without blocking."""
@@ -259,6 +296,11 @@ class InteractiveSession:
             self.transport.close()
         except Exception as e:
             logger.debug("Error closing transport: %s", e)
+        # Wait for reader thread to exit gracefully
+        try:
+            self.reader_thread.join(timeout=1.0)
+        except Exception:
+            pass
 
     def status(self) -> dict[str, Any]:
         """Diagnostic state."""

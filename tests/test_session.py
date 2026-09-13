@@ -13,7 +13,10 @@ def test_session_exec_expect_bash():
 
     # Execute a clean command
     res = session.exec_expect(command="echo 'TERMIO_SUCCESS'", timeout=3.0)
-    assert "TERMIO_SUCCESS" in res
+    assert isinstance(res, dict)
+    assert res["success"] is True
+    assert res["command"] == "echo 'TERMIO_SUCCESS'"
+    assert "TERMIO_SUCCESS" in res["output"]
 
     # Verify history
     history = session.get_history(10)
@@ -55,3 +58,44 @@ def test_session_poll_cmd():
     )
     assert res.get("matched") is True
     session.close()
+
+
+def test_session_exec_expect_timeout():
+    """Test that exec_expect returns structured timeout result."""
+    transport = PtyTransport(command=["cat"])  # cat never shows a shell prompt
+    session = InteractiveSession(transport=transport)
+
+    res = session.exec_expect(command="hello", timeout=1.0)
+    assert isinstance(res, dict)
+    assert res["success"] is False
+    assert res["timeout"] is True
+    assert "timed out" in res.get("error", "")
+
+    session.close()
+
+
+def test_session_exec_expect_process_exit():
+    """Test that exec_expect returns structured result when process exits."""
+    # Use a command that stays alive briefly then exits, so the write succeeds
+    # but prompt is never matched
+    transport = PtyTransport(command=["bash", "-c", "read line; exit 1"])
+    session = InteractiveSession(transport=transport)
+    time.sleep(0.1)  # Let bash start up
+
+    res = session.exec_expect(command="trigger-exit", timeout=3.0)
+    assert isinstance(res, dict)
+    assert res["success"] is False
+    assert res["process_exited"] is True
+
+    session.close()
+
+
+def test_session_close_joins_reader():
+    """Test that close() joins the reader thread."""
+    transport = PtyTransport(command=["cat"])
+    session = InteractiveSession(transport=transport)
+    assert session.reader_thread.is_alive()
+
+    session.close()
+    # After close, reader thread should have stopped
+    assert not session.reader_thread.is_alive()

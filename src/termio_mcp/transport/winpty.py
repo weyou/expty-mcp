@@ -51,12 +51,20 @@ class WinPtyTransport(BaseTransport):
         )
         self._closed = False
 
-    def read(self, max_bytes: int = 4096) -> bytes:
-        if self._closed or not self.proc.isalive():
+    def read(self, max_bytes: int = 4096, timeout: float = 0.1) -> bytes:
+        if self._closed:
+            raise EOFError("Windows ConPTY process has been closed")
+
+        if not self.proc.isalive():
+            try:
+                text = self.proc.read(max_bytes)
+                if text:
+                    return text.encode("utf-8", errors="replace")
+            except Exception:
+                pass
             raise EOFError("Windows ConPTY process has terminated")
 
         try:
-            # winpty PtyProcess.read() returns string
             text = self.proc.read(max_bytes)
             if not text:
                 return b""
@@ -64,7 +72,7 @@ class WinPtyTransport(BaseTransport):
         except EOFError:
             raise
         except Exception as e:
-            if not self.proc.isalive():
+            if self._closed or not self.proc.isalive():
                 raise EOFError("Windows ConPTY process exited") from e
             raise
 

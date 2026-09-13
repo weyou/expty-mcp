@@ -21,6 +21,7 @@ class SessionManager:
         self.metadata: dict[str, dict[str, Any]] = {}
         self.active_session_id: str | None = None
         self.lock = threading.Lock()
+        self._spawn_lock = threading.Lock()
 
     def spawn_pty(
         self,
@@ -82,31 +83,64 @@ class SessionManager:
     def get_session(self, session_id: str | None = None) -> tuple[str, InteractiveSession]:
         """
         Retrieve session by session_id, or resolve to active_session_id.
-        If no session exists, automatically spawns a default 'bash' PTY session.
+
+        If a specific session_id is provided but does not exist, raises KeyError
+        to prevent accidental command execution on the wrong session.
+        If no session_id is provided and no sessions exist, auto-spawns a default shell.
         """
+        need_spawn = False
+
         with self.lock:
-            target_id = session_id or self.active_session_id
+            # Case 1: Explicit session_id was provided — strict lookup, never fallback
+            if session_id is not None:
+                if session_id in self.sessions:
+                    return session_id, self.sessions[session_id]
+                raise KeyError(
+                    f"Session '{session_id}' not found. "
+                    f"Available sessions: {list(self.sessions.keys())}"
+                )
 
-            if target_id and target_id in self.sessions:
-                return target_id, self.sessions[target_id]
+            # Case 2: No session_id provided — resolve to active session
+            if self.active_session_id and self.active_session_id in self.sessions:
+                return self.active_session_id, self.sessions[self.active_session_id]
 
-            # If only 1 session exists, select it
+            # If only 1 session exists, auto-select it
             if len(self.sessions) == 1:
                 single_id = next(iter(self.sessions.keys()))
                 self.active_session_id = single_id
                 return single_id, self.sessions[single_id]
 
-            # Auto-spawn default session if empty
-            if not self.sessions:
+            # If multiple sessions exist but none is active, raise an error
+            if self.sessions:
+                raise KeyError(
+                    "No active session set and multiple sessions exist. "
+                    f"Please specify a session_id. Available: {list(self.sessions.keys())}"
+                )
+
+            # Case 3: No sessions at all — auto-spawn default shell
+            need_spawn = True
+
+        if need_spawn:
+            with self._spawn_lock:
+                # Double-check: another thread might have spawned while we waited
+                with self.lock:
+                    if self.active_session_id and self.active_session_id in self.sessions:
+                        return self.active_session_id, self.sessions[self.active_session_id]
+                    if len(self.sessions) == 1:
+                        single_id = next(iter(self.sessions.keys()))
+                        self.active_session_id = single_id
+                        return single_id, self.sessions[single_id]
+
                 default_shell = get_default_shell()
                 logger.info(
                     "No active session found; auto-spawning default '%s' session.", default_shell
                 )
+                new_id = self.spawn_pty(command=default_shell, name="default-shell")
+                with self.lock:
+                    return new_id, self.sessions[new_id]
 
-        # Release lock before spawning to avoid deadlock
-        new_id = self.spawn_pty(command=get_default_shell(), name="default-shell")
-        with self.lock:
-            return new_id, self.sessions[new_id]
+        # Should not reach here, but safety fallback
+        raise KeyError("No sessions available.")
 
     def list_sessions(self) -> list[dict[str, Any]]:
         """List all managed sessions with runtime health status."""

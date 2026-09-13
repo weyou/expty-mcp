@@ -101,10 +101,18 @@ def termio_exec_expect(
     prompts: list[str] | None = None,
     timeout: float = 8.0,
     session_id: str | None = None,
-) -> str:
+) -> dict[str, Any]:
     """
     Execute a shell, REPL, or bootloader command and automatically wait for prompt to return.
     Strips command echo and ANSI formatting, returning clean stdout in a single tool call.
+
+    Returns a structured result with 'success', 'output', 'timeout', 'process_exited',
+    'exit_code', and 'elapsed_seconds' fields.
+
+    IMPORTANT: For long-running commands (e.g. apt-get install, make, large file transfers),
+    use termio_send instead to dispatch the command, then poll with termio_read_buffer
+    periodically to check progress. Do NOT use termio_exec_expect for commands that may
+    take more than a few seconds, as it will report a timeout.
 
     Args:
         command: The command line to execute.
@@ -112,7 +120,10 @@ def termio_exec_expect(
         timeout: Maximum seconds to wait for the prompt to return.
         session_id: Target session ID (defaults to currently active session).
     """
-    _, sess = manager.get_session(session_id)
+    try:
+        _, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return {"success": False, "error": str(e), "output": "", "timeout": False}
     return sess.exec_expect(command=command, prompts=prompts, timeout=timeout)
 
 
@@ -137,7 +148,10 @@ def termio_expect(
         poll_interval: Interval between repeating poll_cmd. Defaults to 0.05s.
         session_id: Target session ID (defaults to currently active session).
     """
-    _, sess = manager.get_session(session_id)
+    try:
+        _, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return {"matched": False, "error": str(e), "output": ""}
     return sess.expect(
         patterns=patterns,
         timeout=timeout,
@@ -161,7 +175,10 @@ def termio_send(
         send_enter: If True, appends a newline.
         session_id: Target session ID (defaults to currently active session).
     """
-    sid, sess = manager.get_session(session_id)
+    try:
+        sid, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return f"Error: {e}"
     bytes_sent = sess.send(text=text, send_enter=send_enter)
     return f"Sent {bytes_sent} bytes to session '{sid}'."
 
@@ -178,7 +195,10 @@ def termio_read_buffer(
         clear: If True, flushes the read buffer after fetching.
         session_id: Target session ID (defaults to currently active session).
     """
-    _, sess = manager.get_session(session_id)
+    try:
+        _, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return f"Error: {e}"
     buf = sess.read_buffer(clear=clear)
     return buf if buf else "(Buffer is currently empty)"
 
@@ -195,7 +215,10 @@ def termio_get_history(
         limit: Number of recent lines to retrieve (default: 50).
         session_id: Target session ID (defaults to currently active session).
     """
-    _, sess = manager.get_session(session_id)
+    try:
+        _, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return [f"Error: {e}"]
     return sess.get_history(limit=limit)
 
 
@@ -240,7 +263,10 @@ def termio_status(session_id: str | None = None) -> dict[str, Any]:
     Args:
         session_id: Target session ID (defaults to active session).
     """
-    sid, sess = manager.get_session(session_id)
+    try:
+        sid, sess = manager.get_session(session_id)
+    except KeyError as e:
+        return {"error": str(e)}
     res = sess.status()
     res["session_id"] = sid
     return res
