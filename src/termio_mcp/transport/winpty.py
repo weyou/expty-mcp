@@ -1,5 +1,7 @@
 import os
+import queue
 import shlex
+import threading
 
 from .base import BaseTransport
 
@@ -50,31 +52,47 @@ class WinPtyTransport(BaseTransport):
             dimensions=(rows, cols),
         )
         self._closed = False
+        self._read_queue: queue.Queue[bytes | None] = queue.Queue()
+        self._reader_thread = threading.Thread(
+            target=self._worker_loop,
+            name=f"WinPtyReader-{self.proc.pid}",
+            daemon=True,
+        )
+        self._reader_thread.start()
+
+    def _worker_loop(self) -> None:
+        """Dedicated background reader: pulls from blocking proc.read into queue."""
+        while not self._closed:
+            try:
+                text = self.proc.read(4096)
+                if text:
+                    self._read_queue.put(text.encode("utf-8", errors="replace"))
+                elif not self.proc.isalive():
+                    break
+            except Exception:
+                break
+
+        # Put EOF sentinel
+        self._read_queue.put(None)
 
     def read(self, max_bytes: int = 4096, timeout: float = 0.1) -> bytes:
         if self._closed:
             raise EOFError("Windows ConPTY process has been closed")
 
-        if not self.proc.isalive():
-            try:
-                text = self.proc.read(max_bytes)
-                if text:
-                    return text.encode("utf-8", errors="replace")
-            except Exception:
-                pass
-            raise EOFError("Windows ConPTY process has terminated")
-
         try:
-            text = self.proc.read(max_bytes)
-            if not text:
-                return b""
-            return text.encode("utf-8", errors="replace")
-        except EOFError:
-            raise
-        except Exception as e:
-            if self._closed or not self.proc.isalive():
-                raise EOFError("Windows ConPTY process exited") from e
-            raise
+            item = self._read_queue.get(timeout=timeout)
+            if item is None:
+                raise EOFError("Windows ConPTY process has terminated")
+            if len(item) > max_bytes:
+                # Return prefix and push back remnant
+                prefix = item[:max_bytes]
+                self._read_queue.put(item[max_bytes:])
+                return prefix
+            return item
+        except queue.Empty:
+            if not self.proc.isalive():
+                raise EOFError("Windows ConPTY process has terminated")
+            return b""
 
     def write(self, data: bytes) -> int:
         if self._closed or not self.proc.isalive():
@@ -112,6 +130,11 @@ class WinPtyTransport(BaseTransport):
             self.proc.close()
         except Exception:
             pass
+        finally:
+            try:
+                self._reader_thread.join(timeout=0.5)
+            except Exception:
+                pass
 
     @property
     def display_name(self) -> str:

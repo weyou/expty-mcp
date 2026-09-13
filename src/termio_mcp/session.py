@@ -214,12 +214,14 @@ class InteractiveSession:
         timeout: float = 8.0,
     ) -> dict[str, Any]:
         """
-        Execute a shell or REPL command, wait for prompt, and return structured result
-        with clean stdout (prompt and local command echo removed).
+        Execute a shell or REPL command, wait for prompt, and return structured result.
+        Output preserves the original terminal stream (including command echo) as-is,
+        providing the AI with a complete causal context anchor for analysis.
 
         Returns a dict with keys:
             - success (bool): Whether the command completed and a prompt was matched.
-            - output (str): Clean command output with echo and prompt stripped.
+            - command (str): The command that was executed.
+            - output (str): Terminal output between command dispatch and prompt match.
             - timeout (bool): True if the command timed out.
             - process_exited (bool): True if the process exited before matching.
             - exit_code (int | None): Process exit code if exited.

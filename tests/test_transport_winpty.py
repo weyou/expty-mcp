@@ -50,6 +50,32 @@ def test_winpty_transport_mocked():
             assert transport.is_alive() is False
 
 
+def test_winpty_transport_queue_empty_and_eof():
+    mock_proc = MagicMock()
+    mock_proc.isalive.return_value = True
+    mock_proc.pid = 9999
+    # Simulate empty read first, then EOF
+    mock_proc.read.return_value = ""
+
+    mock_winpty = MagicMock()
+    mock_winpty.PtyProcess.spawn.return_value = mock_proc
+
+    with patch("termio_mcp.transport.winpty.WinPtyProcess", mock_winpty.PtyProcess):
+        with patch("termio_mcp.transport.winpty._WINPTY_AVAILABLE", True):
+            from termio_mcp.transport.winpty import WinPtyTransport
+
+            transport = WinPtyTransport(command="cmd.exe")
+            # When queue is empty and process is alive, returns empty bytes
+            assert transport.read(1024, timeout=0.01) == b""
+
+            # When process terminates
+            mock_proc.isalive.return_value = False
+            with pytest.raises(EOFError):
+                transport.read(1024, timeout=0.01)
+
+            transport.close()
+
+
 def test_winpty_missing_dependency():
     with patch("termio_mcp.transport.winpty._WINPTY_AVAILABLE", False):
         from termio_mcp.transport.winpty import WinPtyTransport

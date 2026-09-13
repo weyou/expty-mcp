@@ -5,8 +5,9 @@ from termio_mcp.transport.pty import PtyTransport
 
 def test_pty_transport_lifecycle():
     transport = PtyTransport(command=["echo", "termio-test-ok"])
-    assert transport.is_alive()
-    time.sleep(0.1)
+    # Note: `echo` is transient and may exit before we check is_alive(),
+    # so we skip the initial alive assertion and focus on output & exit status.
+    time.sleep(0.2)
 
     # Read output
     output = b""
@@ -20,7 +21,6 @@ def test_pty_transport_lifecycle():
         pass
 
     assert b"termio-test-ok" in output
-    time.sleep(0.1)
     assert not transport.is_alive()
     assert transport.get_exit_status() == 0
     transport.close()

@@ -104,7 +104,8 @@ def termio_exec_expect(
 ) -> dict[str, Any]:
     """
     Execute a shell, REPL, or bootloader command and automatically wait for prompt to return.
-    Strips command echo and ANSI formatting, returning clean stdout in a single tool call.
+    Output preserves original terminal stream (including command echo) as a causal anchor
+    for AI analysis. ANSI escape codes are stripped for readability.
 
     Returns a structured result with 'success', 'output', 'timeout', 'process_exited',
     'exit_code', and 'elapsed_seconds' fields.
