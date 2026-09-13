@@ -18,6 +18,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 - 🤹 **Multi-Session Management**: Concurrently manage multiple terminal sessions with smart active-session auto-resolution.
 - ⏱️ **Fast Process Exit Detection**: Instantly detects when a child process or SSH connection terminates, returning exit codes immediately without waiting for timeouts.
 - 🔄 **Periodic Injection (`poll_cmd`)**: Inject keepalive characters or autoboot interrupt keys (e.g. spaces for U-Boot) at high frequency during expect wait windows.
+- 🌐 **100% Cross-Platform**: Native POSIX PTY on Linux & macOS (`ptyprocess`), native Windows ConPTY (`pywinpty`), and cross-platform Serial support (`pyserial`).
 
 ---
 

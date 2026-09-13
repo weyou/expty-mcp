@@ -35,7 +35,7 @@ atexit.register(manager.close_all)
 
 @mcp.tool()
 def termio_spawn(
-    command: str = "bash",
+    command: str | None = None,
     name: str | None = None,
     cwd: str | None = None,
     env: dict[str, str] | None = None,
@@ -46,7 +46,7 @@ def termio_spawn(
     Spawn a new persistent interactive process (bash, ssh, python, gdb, docker, etc.) in a PTY.
 
     Args:
-        command: Command string or binary to execute (e.g. 'bash', 'ssh user@192.168.1.1').
+        command: Command to execute (defaults to platform shell: bash or powershell.exe).
         name: Optional friendly name for this session (e.g. 'router-ssh').
         cwd: Optional working directory.
         env: Optional environment variables dictionary.
@@ -54,12 +54,14 @@ def termio_spawn(
         cols: Terminal columns (default: 120).
     """
     sid = manager.spawn_pty(command=command, name=name, cwd=cwd, env=env, rows=rows, cols=cols)
+    meta = manager.metadata.get(sid, {})
+    cmd_name = meta.get("command", command or "default-shell")
     return {
         "success": True,
         "session_id": sid,
-        "name": name or command,
-        "command": command,
-        "message": f"Spawned PTY session '{sid}' running: {command}",
+        "name": name or cmd_name,
+        "command": cmd_name,
+        "message": f"Spawned PTY session '{sid}' running: {cmd_name}",
     }
 
 

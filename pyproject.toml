@@ -41,8 +41,9 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
-    "ptyprocess>=0.7.0",
     "pyserial>=3.5",
+    "ptyprocess>=0.7.0; platform_system != 'Windows'",
+    "pywinpty>=2.0.0; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]

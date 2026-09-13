@@ -5,8 +5,7 @@ import uuid
 from typing import Any
 
 from .session import InteractiveSession
-from .transport.pty import PtyTransport
-from .transport.serial import SerialTransport
+from .transport import SerialTransport, create_pty_transport, get_default_shell
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +24,20 @@ class SessionManager:
 
     def spawn_pty(
         self,
-        command: str = "bash",
+        command: str | list[str] | None = None,
         name: str | None = None,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         rows: int = 40,
         cols: int = 120,
     ) -> str:
-        """Spawn a new local shell, command, or SSH connection within a PTY."""
-        transport = PtyTransport(command=command, cwd=cwd, env=env, rows=rows, cols=cols)
+        """Spawn a new local shell, command, or SSH connection within a platform-native PTY."""
+        cmd = command if command is not None else get_default_shell()
+        transport = create_pty_transport(command=cmd, cwd=cwd, env=env, rows=rows, cols=cols)
         session = InteractiveSession(transport=transport)
 
         session_id = f"pty-{uuid.uuid4().hex[:8]}"
-        display_name = name or (command if isinstance(command, str) else " ".join(command))
+        display_name = name or (cmd if isinstance(cmd, str) else " ".join(cmd))
 
         with self.lock:
             self.sessions[session_id] = session
@@ -45,7 +45,7 @@ class SessionManager:
                 "id": session_id,
                 "name": display_name,
                 "type": "pty",
-                "command": command,
+                "command": cmd,
                 "created_at": datetime.datetime.now().isoformat(),
             }
             self.active_session_id = session_id
@@ -98,10 +98,13 @@ class SessionManager:
 
             # Auto-spawn default session if empty
             if not self.sessions:
-                logger.info("No active session found; auto-spawning default 'bash' session.")
+                default_shell = get_default_shell()
+                logger.info(
+                    "No active session found; auto-spawning default '%s' session.", default_shell
+                )
 
         # Release lock before spawning to avoid deadlock
-        new_id = self.spawn_pty(command="bash", name="default-bash")
+        new_id = self.spawn_pty(command=get_default_shell(), name="default-shell")
         with self.lock:
             return new_id, self.sessions[new_id]
 
