@@ -34,7 +34,7 @@ atexit.register(manager.close_all)
 
 
 @mcp.tool()
-def termio_spawn(
+def spawn(
     command: str | None = None,
     name: str | None = None,
     cwd: str | None = None,
@@ -66,7 +66,7 @@ def termio_spawn(
 
 
 @mcp.tool()
-def termio_serial(
+def serial(
     port: str = "/dev/ttyUSB0",
     baudrate: int = 115200,
     name: str | None = None,
@@ -90,13 +90,13 @@ def termio_serial(
 
 
 @mcp.tool()
-def termio_list_ports() -> list[dict[str, Any]]:
+def list_ports() -> list[dict[str, Any]]:
     """Enumerate attached physical and virtual serial ports on the host."""
     return list_serial_ports()
 
 
 @mcp.tool()
-def termio_exec_expect(
+def exec_expect(
     command: str,
     prompts: list[str] | None = None,
     timeout: float = 8.0,
@@ -111,9 +111,9 @@ def termio_exec_expect(
     'exit_code', and 'elapsed_seconds' fields.
 
     IMPORTANT: For long-running commands (e.g. apt-get install, make, large file transfers),
-    use termio_send instead to dispatch the command, then poll with termio_read_buffer
-    periodically to check progress. Do NOT use termio_exec_expect for commands that may
-    take more than a few seconds, as it will report a timeout.
+    use send instead to dispatch the command, then poll with read_buffer periodically
+    to check progress. Do NOT use exec_expect for commands that may take more than a few
+    seconds, as it will report a timeout.
 
     Args:
         command: The command line to execute.
@@ -129,7 +129,7 @@ def termio_exec_expect(
 
 
 @mcp.tool()
-def termio_expect(
+def expect(
     patterns: list[str],
     command: str | None = None,
     timeout: float = 10.0,
@@ -163,7 +163,7 @@ def termio_expect(
 
 
 @mcp.tool()
-def termio_send(
+def send(
     text: str,
     send_enter: bool = False,
     session_id: str | None = None,
@@ -185,7 +185,7 @@ def termio_send(
 
 
 @mcp.tool()
-def termio_read_buffer(
+def read_buffer(
     clear: bool = False,
     session_id: str | None = None,
 ) -> str:
@@ -205,7 +205,7 @@ def termio_read_buffer(
 
 
 @mcp.tool()
-def termio_get_history(
+def get_history(
     limit: int = 50,
     with_timestamps: bool = True,
     session_id: str | None = None,
@@ -233,13 +233,13 @@ def termio_get_history(
 
 
 @mcp.tool()
-def termio_list_sessions() -> list[dict[str, Any]]:
+def list_sessions() -> list[dict[str, Any]]:
     """List all active PTY and Serial sessions with runtime health status."""
     return manager.list_sessions()
 
 
 @mcp.tool()
-def termio_switch_session(session_id: str) -> str:
+def switch_session(session_id: str) -> str:
     """
     Switch the default active session.
 
@@ -252,7 +252,7 @@ def termio_switch_session(session_id: str) -> str:
 
 
 @mcp.tool()
-def termio_close_session(session_id: str | None = None) -> str:
+def close_session(session_id: str | None = None) -> str:
     """
     Close and terminate an interactive session.
 
@@ -266,7 +266,7 @@ def termio_close_session(session_id: str | None = None) -> str:
 
 
 @mcp.tool()
-def termio_status(session_id: str | None = None) -> dict[str, Any]:
+def status(session_id: str | None = None) -> dict[str, Any]:
     """
     Check connection health, buffer statistics, and background daemon status.
 

@@ -25,8 +25,8 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 - **Smart 50ms Packet Continuation**: 
   - Packet fragments arriving within `< 50ms` are smoothly merged into a single line.
   - Fragments arriving after `>= 50ms` (e.g. driver pause, slow command) are split into separate lines tagged with `↳ ` and their own timestamp—enabling effortless correlation against test framework logs (Pytest, RobotFramework).
-- **Atomic Expect Engine (`termio_expect`)**: Match regex or substring prompt patterns atomically (`['password:', '# ', '>>>']`) with buffer slicing and retention.
-- **Prompt-Aware Execution (`termio_exec_expect`)**: Send commands and wait for prompt return in a single call, returning structured JSON results with execution status and duration.
+- **Atomic Expect Engine (`expect`)**: Match regex or substring prompt patterns atomically (`['password:', '# ', '>>>']`) with buffer slicing and retention.
+- **Prompt-Aware Execution (`exec_expect`)**: Send commands and wait for prompt return in a single call, returning structured JSON results with execution status and duration.
 - **Causal Anchor Preservation**: Preserves command echo in output streams, providing LLMs with an unbroken causal chain for self-correction without regex stripping bugs.
 - **Cross-Chunk ANSI Sanitization**: Intelligently handles split escape sequences (e.g. `\x1b[` in chunk 1 and `31m` in chunk 2), preventing terminal garbage from entering clean buffers.
 - **Thread-Safe Multi-Session Management**: Concurrently manage multiple terminal sessions with strict session guarding and double-checked locking auto-spawn.
@@ -40,18 +40,18 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 | Tool | Description |
 | :--- | :--- |
-| **`termio_spawn`** | Spawn a new interactive process (`bash`, `ssh user@host`, `python`, `gdb`, etc.) in a native PTY. |
-| **`termio_serial`** | Connect to a physical or virtual serial port (`/dev/ttyUSB0`, `COM3`). |
-| **`termio_exec_expect`** | Execute a command and wait for prompt to return, returning structured execution status and clean output. |
-| **`termio_expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompt sync / bootloader interception). |
-| **`termio_send`** | Send raw keys or escape sequences (e.g. `\x03` for Ctrl+C, `\x1b` for Escape, Enter). |
-| **`termio_read_buffer`** | Non-blocking read of newly accumulated stream buffer. |
-| **`termio_get_history`** | Fetch recent line history. By default, formats with `[YYYY-MM-DD HH:MM:SS.mmm]` and `↳ ` continuation markers. |
-| **`termio_list_sessions`**| List all active PTY and Serial sessions with runtime health status. |
-| **`termio_switch_session`**| Switch the default active session. |
-| **`termio_close_session`** | Terminate and cleanly shut down an active session. |
-| **`termio_list_ports`** | Enumerate connected physical and virtual serial ports on the host. |
-| **`termio_status`** | Query runtime diagnostics, buffer usage, and transport health. |
+| **`spawn`** | Spawn a new interactive process (`bash`, `ssh user@host`, `python`, `gdb`, etc.) in a native PTY. |
+| **`serial`** | Connect to a physical or virtual serial port (`/dev/ttyUSB0`, `COM3`). |
+| **`exec_expect`** | Execute a command and wait for prompt to return, returning structured execution status and clean output. |
+| **`expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompt sync / bootloader interception). |
+| **`send`** | Send raw keys or escape sequences (e.g. `\x03` for Ctrl+C, `\x1b` for Escape, Enter). |
+| **`read_buffer`** | Non-blocking read of newly accumulated stream buffer. |
+| **`get_history`** | Fetch recent line history. By default, formats with `[YYYY-MM-DD HH:MM:SS.mmm]` and `↳ ` continuation markers. |
+| **`list_sessions`**| List all active PTY and Serial sessions with runtime health status. |
+| **`switch_session`**| Switch the default active session. |
+| **`close_session`** | Terminate and cleanly shut down an active session. |
+| **`list_ports`** | Enumerate connected physical and virtual serial ports on the host. |
+| **`status`** | Query runtime diagnostics, buffer usage, and transport health. |
 
 ---
 
@@ -61,14 +61,14 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 ```json
 // Step 1: Spawn SSH connection
-// Tool: termio_spawn
+// Tool: spawn
 {
   "command": "ssh root@192.168.1.1",
   "name": "openwrt-router"
 }
 
 // Step 2: Handle password prompt with Expect
-// Tool: termio_expect
+// Tool: expect
 {
   "patterns": ["password:", "# "],
   "command": "admin",
@@ -76,7 +76,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 }
 
 // Step 3: Run interactive commands effortlessly
-// Tool: termio_exec_expect
+// Tool: exec_expect
 {
   "command": "cat /etc/config/network"
 }
@@ -85,7 +85,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 ### 2. Time-Correlated Log Analysis (Aligning with Test Frameworks)
 
 ```json
-// Tool: termio_get_history
+// Tool: get_history
 {
   "limit": 5,
   "with_timestamps": true
@@ -105,13 +105,13 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 ### 3. Interactive Python REPL / Debugger
 
 ```json
-// Tool: termio_spawn
+// Tool: spawn
 {
   "command": "python3",
   "name": "python-repl"
 }
 
-// Tool: termio_exec_expect
+// Tool: exec_expect
 {
   "command": "import math; math.factorial(10)"
 }
@@ -121,14 +121,14 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 ```json
 // Step 1: Open serial port
-// Tool: termio_serial
+// Tool: serial
 {
   "port": "/dev/ttyUSB0",
   "baudrate": 115200
 }
 
 // Step 2: Interrupt autoboot with high-frequency space injection
-// Tool: termio_expect
+// Tool: expect
 {
   "patterns": ["IPQ807x#", "U-Boot#"],
   "poll_cmd": " ",
