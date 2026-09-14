@@ -1,7 +1,7 @@
 import time
 
-from termio_mcp.session import InteractiveSession
-from termio_mcp.transport.pty import PtyTransport
+from expty_mcp.session import InteractiveSession
+from expty_mcp.transport.pty import PtyTransport
 
 
 def test_session_exec_expect_bash():
@@ -111,7 +111,7 @@ def test_session_history_timestamps_and_50ms_rule():
     """
     from unittest.mock import MagicMock
 
-    from termio_mcp.transport.base import BaseTransport
+    from expty_mcp.transport.base import BaseTransport
 
     mock_transport = MagicMock(spec=BaseTransport)
     mock_transport.is_alive.return_value = True

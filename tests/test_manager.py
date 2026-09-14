@@ -1,6 +1,6 @@
 import pytest
 
-from termio_mcp.manager import SessionManager
+from expty_mcp.manager import SessionManager
 
 
 def test_manager_lifecycle():

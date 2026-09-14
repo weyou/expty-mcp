@@ -2,8 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from termio_mcp.transport.base import BaseTransport
-from termio_mcp.transport.factory import get_default_shell
+from expty_mcp.transport.base import BaseTransport
+from expty_mcp.transport.factory import get_default_shell
 
 
 def test_get_default_shell():
@@ -23,9 +23,9 @@ def test_winpty_transport_mocked():
     mock_winpty = MagicMock()
     mock_winpty.PtyProcess.spawn.return_value = mock_proc
 
-    with patch("termio_mcp.transport.winpty.WinPtyProcess", mock_winpty.PtyProcess):
-        with patch("termio_mcp.transport.winpty._WINPTY_AVAILABLE", True):
-            from termio_mcp.transport.winpty import WinPtyTransport
+    with patch("expty_mcp.transport.winpty.WinPtyProcess", mock_winpty.PtyProcess):
+        with patch("expty_mcp.transport.winpty._WINPTY_AVAILABLE", True):
+            from expty_mcp.transport.winpty import WinPtyTransport
 
             transport = WinPtyTransport(command="powershell.exe", rows=30, cols=100)
             assert isinstance(transport, BaseTransport)
@@ -60,9 +60,9 @@ def test_winpty_transport_queue_empty_and_eof():
     mock_winpty = MagicMock()
     mock_winpty.PtyProcess.spawn.return_value = mock_proc
 
-    with patch("termio_mcp.transport.winpty.WinPtyProcess", mock_winpty.PtyProcess):
-        with patch("termio_mcp.transport.winpty._WINPTY_AVAILABLE", True):
-            from termio_mcp.transport.winpty import WinPtyTransport
+    with patch("expty_mcp.transport.winpty.WinPtyProcess", mock_winpty.PtyProcess):
+        with patch("expty_mcp.transport.winpty._WINPTY_AVAILABLE", True):
+            from expty_mcp.transport.winpty import WinPtyTransport
 
             transport = WinPtyTransport(command="cmd.exe")
             # When queue is empty and process is alive, returns empty bytes
@@ -77,8 +77,8 @@ def test_winpty_transport_queue_empty_and_eof():
 
 
 def test_winpty_missing_dependency():
-    with patch("termio_mcp.transport.winpty._WINPTY_AVAILABLE", False):
-        from termio_mcp.transport.winpty import WinPtyTransport
+    with patch("expty_mcp.transport.winpty._WINPTY_AVAILABLE", False):
+        from expty_mcp.transport.winpty import WinPtyTransport
 
         with pytest.raises(RuntimeError, match="pywinpty is not installed"):
             WinPtyTransport(command="cmd.exe")

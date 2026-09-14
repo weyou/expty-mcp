@@ -1,9 +1,9 @@
-# termio-mcp
+# expty-mcp
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://pypi.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**`termio-mcp`** is a high-performance **Model Context Protocol (MCP)** server that equips AI assistants (Claude Code, Cursor, Antigravity, VS Code) with persistent, zero-loss **Interactive PTY Process and Serial Communication** capabilities.
+**`expty-mcp`** is a high-performance **Model Context Protocol (MCP)** server that equips AI assistants (Claude Code, Cursor, Antigravity, VS Code) with persistent, zero-loss **Interactive PTY Process and Serial Communication** capabilities.
 
 Engineered specifically for **persistent SSH sessions, remote server administration, local shells, REPLs, container debugging, and hardware serial ports (UART/U-Boot)**. It features an **Atomic Expect Engine**, continuous background ingestion daemon, transport-level microsecond timestamping with intelligent 50ms continuation detection, and full cross-chunk ANSI sanitization.
 
@@ -12,7 +12,7 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 ## Architecture Design
 
 <p align="center">
-  <img src="assets/architecture.png" alt="termio-mcp Architecture" width="900">
+  <img src="assets/architecture.png" alt="expty-mcp Architecture" width="900">
 </p>
 
 ---
@@ -144,7 +144,8 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 ### Local Installation
 
 ```bash
-cd ~/dev/termio-mcp
+git clone https://github.com/weyou/expty-mcp.git
+cd expty-mcp
 pip install -e .
 ```
 
@@ -156,9 +157,9 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "termio": {
+    "expty": {
       "command": "python3",
-      "args": ["-m", "termio_mcp"]
+      "args": ["-m", "expty_mcp"]
     }
   }
 }
@@ -170,9 +171,9 @@ Add to `~/.gemini/config/mcp_config.json`:
 ```json
 {
   "mcpServers": {
-    "termio": {
+    "expty": {
       "command": "python3",
-      "args": ["-m", "termio_mcp"]
+      "args": ["-m", "expty_mcp"]
     }
   }
 }
@@ -184,9 +185,9 @@ Add to `.cursor/mcp.json` or Cursor Global Settings:
 ```json
 {
   "mcpServers": {
-    "termio": {
+    "expty": {
       "command": "python3",
-      "args": ["-m", "termio_mcp"]
+      "args": ["-m", "expty_mcp"]
     }
   }
 }
@@ -197,7 +198,6 @@ Add to `.cursor/mcp.json` or Cursor Global Settings:
 ## Testing & Code Quality
 
 ```bash
-cd ~/dev/termio-mcp
 pytest -v
 ruff check .
 ```

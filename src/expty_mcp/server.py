@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastMCP Server
 mcp = FastMCP(
-    name="termio-mcp",
+    name="expty",
     instructions=(
         "Universal interactive PTY and Serial stream manager for AI agents. "
         "Supports persistent SSH sessions, local shells, REPLs, hardware UARTs, "
@@ -283,7 +283,7 @@ def status(session_id: str | None = None) -> dict[str, Any]:
 
 
 def main():
-    """CLI Entrypoint for running termio-mcp server over stdio."""
+    """CLI Entrypoint for running expty-mcp server over stdio."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",

@@ -1,6 +1,6 @@
 import time
 
-from termio_mcp.transport.pty import PtyTransport
+from expty_mcp.transport.pty import PtyTransport
 
 
 def test_pty_transport_lifecycle():

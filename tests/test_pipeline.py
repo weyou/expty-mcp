@@ -1,4 +1,4 @@
-from termio_mcp.pipeline import decode_escape_sequences, strip_ansi
+from expty_mcp.pipeline import decode_escape_sequences, strip_ansi
 
 
 def test_decode_escape_sequences():
