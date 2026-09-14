@@ -141,19 +141,50 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 ## Installation & Configuration
 
-### Local Installation
+### Option 1: Fast Zero-Install with `uvx` (Recommended for MCP Clients)
+
+No manual installation required. MCP clients can run `expty-mcp` directly via Astral `uv`:
+
+```bash
+# Run directly with uvx (from GitHub repository)
+uvx --from git+https://github.com/weyou/expty-mcp.git expty
+
+# Or after PyPI release
+uvx expty-mcp
+```
+
+### Option 2: Local Installation (with `uv` or `pip`)
 
 ```bash
 git clone https://github.com/weyou/expty-mcp.git
 cd expty-mcp
+
+# Using uv (fastest)
+uv pip install -e .
+
+# Or using standard pip
 pip install -e .
 ```
+
+---
 
 ### Client Configuration
 
 #### 1. Claude Desktop / Claude Code
-Add to `claude_desktop_config.json`:
 
+**Using `uvx` (Zero-Install):**
+```json
+{
+  "mcpServers": {
+    "expty": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/weyou/expty-mcp.git", "expty"]
+    }
+  }
+}
+```
+
+**Using local Python environment:**
 ```json
 {
   "mcpServers": {
@@ -186,8 +217,8 @@ Add to `.cursor/mcp.json` or Cursor Global Settings:
 {
   "mcpServers": {
     "expty": {
-      "command": "python3",
-      "args": ["-m", "expty_mcp"]
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/weyou/expty-mcp.git", "expty"]
     }
   }
 }
