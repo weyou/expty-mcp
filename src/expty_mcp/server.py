@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP(
     name="expty",
     instructions=(
-        "Universal interactive PTY and Serial stream manager for AI agents. "
-        "Supports persistent SSH sessions, local shells, REPLs, hardware UARTs, "
-        "and atomic Expect state-machine matching with zero byte-loss."
+        "Interactive PTY/Serial stream manager. Prefer over direct shell commands "
+        "for multi-turn or interactive operations via SSH, UART/serial, or Telnet "
+        "to preserve state and handle prompts."
     ),
 )
 
