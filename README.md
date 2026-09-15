@@ -1,6 +1,7 @@
 # expty-mcp
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://pypi.org/)
+[![PyPI](https://img.shields.io/pypi/v/expty-mcp.svg)](https://pypi.org/project/expty-mcp/)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://pypi.org/project/expty-mcp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 **`expty-mcp`** is a high-performance **Model Context Protocol (MCP)** server that equips AI assistants (Claude Code, Cursor, Antigravity, VS Code) with persistent, zero-loss **Interactive PTY Process and Serial Communication** capabilities.
@@ -141,50 +142,52 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 
 ## Installation & Configuration
 
-### Option 1: Fast Zero-Install with `uvx` (Recommended for MCP Clients)
+### Option 1: Fast Zero-Install with `uvx` (Recommended)
 
 No manual installation required. MCP clients can run `expty-mcp` directly via Astral `uv`:
 
 ```bash
-# Run directly with uvx (from GitHub repository)
-uvx --from git+https://github.com/weyou/expty-mcp.git expty
-
-# Or after PyPI release
+# Run directly from PyPI
 uvx expty-mcp
 ```
 
-### Option 2: Local Installation (with `uv` or `pip`)
+### Option 2: Install via `pip` or `uv`
+
+```bash
+# Using uv
+uv pip install expty-mcp
+
+# Or using standard pip
+pip install expty-mcp
+```
+
+### Option 3: From Source (Editable Mode)
 
 ```bash
 git clone https://github.com/weyou/expty-mcp.git
 cd expty-mcp
-
-# Using uv (fastest)
 uv pip install -e .
-
-# Or using standard pip
-pip install -e .
 ```
 
 ---
 
-### Client Configuration
+## Client Configuration
 
-#### 1. Claude Desktop / Claude Code
+### 1. Claude Desktop / Claude Code
 
-**Using `uvx` (Zero-Install):**
+**Using `uvx` (Zero-Install, Recommended):**
 ```json
 {
   "mcpServers": {
     "expty": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/weyou/expty-mcp.git", "expty"]
+      "args": ["expty-mcp"]
     }
   }
 }
 ```
 
-**Using local Python environment:**
+**Using installed Python environment:**
 ```json
 {
   "mcpServers": {
@@ -196,21 +199,21 @@ pip install -e .
 }
 ```
 
-#### 2. Antigravity / Google AI Assistant
+### 2. Antigravity / Google AI Assistant
 Add to `~/.gemini/config/mcp_config.json`:
 
 ```json
 {
   "mcpServers": {
     "expty": {
-      "command": "python3",
-      "args": ["-m", "expty_mcp"]
+      "command": "uvx",
+      "args": ["expty-mcp"]
     }
   }
 }
 ```
 
-#### 3. Cursor IDE
+### 3. Cursor IDE
 Add to `.cursor/mcp.json` or Cursor Global Settings:
 
 ```json
@@ -218,7 +221,7 @@ Add to `.cursor/mcp.json` or Cursor Global Settings:
   "mcpServers": {
     "expty": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/weyou/expty-mcp.git", "expty"]
+      "args": ["expty-mcp"]
     }
   }
 }
