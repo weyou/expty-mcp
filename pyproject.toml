@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "expty-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "High-performance Model Context Protocol (MCP) server for interactive PTY processes, SSH, and Serial streams with zero-loss continuous ingestion and atomic Expect state machine."
 readme = "README.md"
 license = { text = "MIT" }
