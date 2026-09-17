@@ -27,9 +27,9 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
   - Packet fragments arriving within `< 50ms` are smoothly merged into a single line.
   - Fragments arriving after `>= 50ms` (e.g. driver pause, slow command) are split into separate lines tagged with `↳ ` and their own timestamp—enabling effortless correlation against test framework logs (Pytest, RobotFramework).
 - **Atomic Expect Engine (`expect`)**: Match regex or substring prompt patterns atomically (`['password:', '# ', '>>>']`) with buffer slicing and retention.
-- **Prompt-Aware Execution (`exec_expect`)**: Send commands and wait for prompt return in a single call, returning structured JSON results with execution status and duration.
+- **Prompt-Aware Execution (`exec_expect`)**: Send commands and wait for prompt return in a single call, returning structured JSON results with execution status, optional `check_exit_code_cmd` probe, and `interrupt_on_timeout` recovery.
 - **Causal Anchor Preservation**: Preserves command echo in output streams, providing LLMs with an unbroken causal chain for self-correction without regex stripping bugs.
-- **Cross-Chunk ANSI Sanitization**: Intelligently handles split escape sequences (e.g. `\x1b[` in chunk 1 and `31m` in chunk 2), preventing terminal garbage from entering clean buffers.
+- **Cross-Chunk ANSI & Backspace Sanitization**: Intelligently handles split escape sequences (e.g. `\x1b[` in chunk 1 and `31m` in chunk 2) and terminal cursor backspace (`\b` / `0x08`) line-editor overwriting artifacts.
 - **Thread-Safe Multi-Session Management**: Concurrently manage multiple terminal sessions with strict session guarding and double-checked locking auto-spawn.
 - **Fast Process Exit Detection**: Instantly detects when a child process or SSH connection terminates, returning exit codes immediately without waiting for timeouts.
 - **Periodic Injection (`poll_cmd`)**: Inject keepalive characters or autoboot interrupt keys (e.g. spaces for U-Boot) at high frequency during expect wait windows.
@@ -43,13 +43,13 @@ Engineered specifically for **persistent SSH sessions, remote server administrat
 | :--- | :--- |
 | **`spawn`** | Spawn a new interactive process (`bash`, `ssh user@host`, `python`, `gdb`, etc.) in a native PTY. |
 | **`serial`** | Connect to a physical or virtual serial port (`/dev/ttyUSB0`, `COM3`). |
-| **`exec_expect`** | Execute a command and wait for prompt to return, returning structured execution status and clean output. |
-| **`expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompt sync / bootloader interception). |
-| **`send`** | Send raw keys or escape sequences (e.g. `\x03` for Ctrl+C, `\x1b` for Escape, Enter). |
-| **`read_buffer`** | Non-blocking read of newly accumulated stream buffer. |
+| **`exec_expect`** | Execute a command and wait for prompt to return, returning structured execution status and clean output. Supports `check_exit_code_cmd` probe and `interrupt_on_timeout`. |
+| **`expect`** | Atomically send a command and wait for regex patterns (ideal for SSH login / prompt sync / bootloader interception). Supports `interrupt_on_timeout`. |
+| **`send`** | Send raw keys or escape sequences (e.g. `\x03` for Ctrl+C, `\x1b` for Escape, Enter). Supports parameter aliases (`data`, `input`, `command`). |
+| **`read_buffer`** | Non-blocking read of newly accumulated stream buffer with backspace folding. |
 | **`get_history`** | Fetch recent line history. By default, formats with `[YYYY-MM-DD HH:MM:SS.mmm]` and `↳ ` continuation markers. |
 | **`list_sessions`**| List all active PTY and Serial sessions with runtime health status. |
-| **`switch_session`**| Switch the default active session. |
+| **`switch_session`**| Switch the default active session (most tools accept `session_id` directly without switching). |
 | **`close_session`** | Terminate and cleanly shut down an active session. |
 | **`list_ports`** | Enumerate connected physical and virtual serial ports on the host. |
 | **`status`** | Query runtime diagnostics, buffer usage, and transport health. |

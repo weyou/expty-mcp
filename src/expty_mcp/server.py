@@ -97,20 +97,26 @@ def list_ports() -> list[dict[str, Any]]:
 
 @mcp.tool()
 def exec_expect(
-    command: str,
+    command: str | None = None,
     prompts: list[str] | None = None,
     timeout: float = 8.0,
     session_id: str | None = None,
     interrupt_on_timeout: str | None = None,
     check_exit_code_cmd: str | None = None,
+    # Parameter aliases for schema ergonomics
+    cmd: str | None = None,
+    expected_patterns: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Execute a shell, REPL, or bootloader command and automatically wait for prompt to return.
     Output preserves original terminal stream (including command echo) as a causal anchor
-    for AI analysis. ANSI escape codes are stripped for readability.
+    for AI analysis. ANSI escape codes are stripped and backspaces are folded for readability.
 
-    Returns a structured result with 'success', 'output', 'timeout', 'process_exited',
-    'exit_code', and 'elapsed_seconds' fields.
+    Tip: You can pass session_id directly to run commands on a specific session
+    without calling switch_session first.
+
+    Returns a structured result with 'success', 'output', 'timeout', 'interrupted',
+    'prompt_recovered', 'process_exited', 'exit_code', and 'elapsed_seconds' fields.
 
     IMPORTANT: For long-running commands (e.g. apt-get install, make, large file transfers),
     use send instead to dispatch the command, then poll with read_buffer periodically
@@ -121,19 +127,35 @@ def exec_expect(
         command: The command line to execute.
         prompts: Optional list of prompt patterns (defaults to standard shell and REPL prompts).
         timeout: Maximum seconds to wait for the prompt to return.
-        session_id: Target session ID (defaults to currently active session).
-        interrupt_on_timeout: Optional character sequence to send if timeout occurs (e.g. "\\x03").
+        session_id: Target session ID (defaults to currently active session). You can pass this
+            directly without calling switch_session first.
+        interrupt_on_timeout: Optional character sequence to send if timeout occurs (e.g. "\\x03"
+            for Ctrl+C, " " for space, "\\r" for Enter, "q"). If provided, will attempt to recover
+            prompt after timeout.
         check_exit_code_cmd: Optional command to probe exit code after successful command completion
             (e.g. "echo $?" for POSIX shell/bash/zsh, "$LASTEXITCODE" for PowerShell).
             If provided, parses the integer exit code into 'exit_code'.
+        cmd: Alias for command.
+        expected_patterns: Alias for prompts.
     """
+    actual_cmd = command if command is not None else cmd
+    if actual_cmd is None:
+        return {
+            "success": False,
+            "error": "Parameter 'command' is required.",
+            "output": "",
+            "timeout": False,
+        }
+
+    active_prompts = prompts if prompts is not None else expected_patterns
+
     try:
         _, sess = manager.get_session(session_id)
     except KeyError as e:
         return {"success": False, "error": str(e), "output": "", "timeout": False}
     return sess.exec_expect(
-        command=command,
-        prompts=prompts,
+        command=actual_cmd,
+        prompts=active_prompts,
         timeout=timeout,
         interrupt_on_timeout=interrupt_on_timeout,
         check_exit_code_cmd=check_exit_code_cmd,
@@ -142,17 +164,23 @@ def exec_expect(
 
 @mcp.tool()
 def expect(
-    patterns: list[str],
+    patterns: list[str] | str | None = None,
     command: str | None = None,
     timeout: float = 10.0,
     poll_cmd: str | None = None,
     poll_interval: float = 0.05,
     session_id: str | None = None,
     interrupt_on_timeout: str | None = None,
+    # Parameter aliases
+    expected_patterns: list[str] | str | None = None,
+    cmd: str | None = None,
 ) -> dict[str, Any]:
     """
     Atomically send an optional command and match incoming stream against prompt patterns.
     Ideal for multi-step authentication (SSH login/password), prompts, and U-Boot interception.
+
+    Tip: You can pass session_id directly to run on a specific session without calling
+    switch_session first.
 
     Args:
         patterns: List of regex/substring patterns to expect (e.g. ['password:', '# ']).
@@ -160,16 +188,26 @@ def expect(
         timeout: Maximum seconds to wait. Defaults to 10.0s.
         poll_cmd: Characters to repeatedly send during wait (e.g. ' ' for autoboot intercept).
         poll_interval: Interval between repeating poll_cmd. Defaults to 0.05s.
-        session_id: Target session ID (defaults to currently active session).
+        session_id: Target session ID (defaults to currently active session). You can pass this
+            directly without calling switch_session first.
+        interrupt_on_timeout: Optional character sequence to send if timeout occurs (e.g. "\\x03").
+        expected_patterns: Alias for patterns.
+        cmd: Alias for command.
     """
+    active_patterns = patterns if patterns is not None else expected_patterns
+    if active_patterns is None:
+        return {"matched": False, "error": "Parameter 'patterns' is required.", "output": ""}
+
+    actual_cmd = command if command is not None else cmd
+
     try:
         _, sess = manager.get_session(session_id)
     except KeyError as e:
         return {"matched": False, "error": str(e), "output": ""}
     return sess.expect(
-        patterns=patterns,
+        patterns=active_patterns,
         timeout=timeout,
-        command=command,
+        command=actual_cmd,
         poll_cmd=poll_cmd,
         poll_interval=poll_interval,
         interrupt_on_timeout=interrupt_on_timeout,
@@ -178,23 +216,42 @@ def expect(
 
 @mcp.tool()
 def send(
-    text: str,
+    text: str | None = None,
     send_enter: bool = False,
     session_id: str | None = None,
+    # Parameter aliases for schema ergonomics
+    data: str | None = None,
+    input: str | None = None,
+    command: str | None = None,
 ) -> str:
     """
     Send raw characters or escape sequences (e.g. '\\x03' for Ctrl+C, '\\x1b' for Escape, spaces).
 
+    Tip: You can pass session_id directly to send to a specific session without calling
+    switch_session first.
+
     Args:
         text: Raw text or escape sequence string.
         send_enter: If True, appends a newline.
-        session_id: Target session ID (defaults to currently active session).
+        session_id: Target session ID (defaults to currently active session). You can pass this
+            directly without calling switch_session first.
+        data: Alias for text.
+        input: Alias for text.
+        command: Alias for text.
     """
+    payload = (
+        text
+        if text is not None
+        else (data if data is not None else (input if input is not None else command))
+    )
+    if payload is None:
+        return "Error: 'text' parameter is required (or alias 'data', 'input', 'command')."
+
     try:
         sid, sess = manager.get_session(session_id)
     except KeyError as e:
         return f"Error: {e}"
-    bytes_sent = sess.send(text=text, send_enter=send_enter)
+    bytes_sent = sess.send(text=payload, send_enter=send_enter)
     return f"Sent {bytes_sent} bytes to session '{sid}'."
 
 
@@ -206,9 +263,12 @@ def read_buffer(
     """
     Read newly accumulated text from the stream buffer without blocking.
 
+    Tip: You can pass session_id directly without calling switch_session first.
+
     Args:
         clear: If True, flushes the read buffer after fetching.
-        session_id: Target session ID (defaults to currently active session).
+        session_id: Target session ID (defaults to currently active session). You can pass this
+            directly without calling switch_session first.
     """
     try:
         _, sess = manager.get_session(session_id)
@@ -233,11 +293,14 @@ def get_history(
     delayed response), the continuation line is prefixed with '↳ ' and tagged with
     its own timestamp for precise correlation against test framework logs.
 
+    Tip: You can pass session_id directly without calling switch_session first.
+
     Args:
         limit: Number of recent lines to retrieve (default: 50).
         with_timestamps: If True (default), attaches wall-clock timestamps and continuation
             symbols on the fly. If False, returns raw clean text lines without timestamps.
-        session_id: Target session ID (defaults to currently active session).
+        session_id: Target session ID (defaults to currently active session). You can pass this
+            directly without calling switch_session first.
     """
     try:
         _, sess = manager.get_session(session_id)
@@ -257,6 +320,10 @@ def switch_session(session_id: str) -> str:
     """
     Switch the default active session.
 
+    Note: Most tools (exec_expect, send, expect, read_buffer, get_history, close_session, status)
+    accept session_id directly. You only need to call switch_session if you want to change
+    the ambient default session across multiple subsequent calls.
+
     Args:
         session_id: Target session ID to make active.
     """
@@ -269,6 +336,8 @@ def switch_session(session_id: str) -> str:
 def close_session(session_id: str | None = None) -> str:
     """
     Close and terminate an interactive session.
+
+    Tip: You can pass session_id directly without calling switch_session first.
 
     Args:
         session_id: Target session ID to close (defaults to active session).
@@ -283,6 +352,8 @@ def close_session(session_id: str | None = None) -> str:
 def status(session_id: str | None = None) -> dict[str, Any]:
     """
     Check connection health, buffer statistics, and background daemon status.
+
+    Tip: You can pass session_id directly without calling switch_session first.
 
     Args:
         session_id: Target session ID (defaults to active session).
