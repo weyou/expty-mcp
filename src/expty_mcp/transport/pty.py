@@ -2,6 +2,8 @@ import errno
 import os
 import select
 import shlex
+import threading
+import warnings
 
 from ptyprocess import PtyProcess
 
@@ -38,12 +40,19 @@ class PtyTransport(BaseTransport):
         if env:
             merged_env.update(env)
 
-        self.proc = PtyProcess.spawn(
-            argv=self.argv,
-            cwd=self.cwd,
-            env=merged_env,
-            dimensions=(rows, cols),
-        )
+        self._lock = threading.Lock()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                message=".*multi-threaded.*",
+            )
+            self.proc = PtyProcess.spawn(
+                argv=self.argv,
+                cwd=self.cwd,
+                env=merged_env,
+                dimensions=(rows, cols),
+            )
         self.fd = self.proc.fd
         self._closed = False
 
@@ -56,59 +65,64 @@ class PtyTransport(BaseTransport):
     ) -> tuple[bytes, float]:
         import time
 
-        if self._closed or not self.proc.isalive():
-            # Check if there are leftover bytes before raising EOF
-            try:
-                r, _, _ = select.select([self.fd], [], [], 0)
-                if r:
-                    data = os.read(self.fd, max_bytes)
-                    return data, time.time()
-            except Exception:
-                pass
-            raise EOFError("PTY process has terminated")
+        if self._closed:
+            raise EOFError("PTY transport closed")
 
         try:
             r, _, _ = select.select([self.fd], [], [], timeout)
             if not r:
                 return b"", time.time()
             data = os.read(self.fd, max_bytes)
-            return data, time.time()
+            ts = time.time()
+            if not data:
+                raise EOFError("PTY EOF reached")
+            return data, ts
         except OSError as e:
-            # On Linux, reading from a closed PTY master returns EIO
-            if e.errno == errno.EIO:
-                raise EOFError("PTY master received EIO (child process exited)") from e
+            if e.errno in (errno.EIO, errno.EBADF):
+                raise EOFError("PTY stream terminated")
             raise
 
     def write(self, data: bytes) -> int:
-        if self._closed or not self.proc.isalive():
+        if self._closed or not self.is_alive():
             raise RuntimeError("Cannot write to terminated PTY process")
-        return self.proc.write(data)
+        with self._lock:
+            return self.proc.write(data)
 
     def is_alive(self) -> bool:
         if self._closed:
             return False
-        return self.proc.isalive()
+        with self._lock:
+            try:
+                return self.proc.isalive()
+            except Exception:
+                return False
 
     def get_exit_status(self) -> int | None:
-        if self.proc.isalive():
-            return None
-        return self.proc.exitstatus
+        with self._lock:
+            try:
+                if self.proc.isalive():
+                    return None
+                return self.proc.exitstatus
+            except Exception:
+                return getattr(self.proc, "exitstatus", None)
 
     def resize(self, rows: int, cols: int) -> None:
         """Dynamically resize the terminal dimensions."""
         if self.is_alive():
-            self.proc.setwinsize(rows, cols)
+            with self._lock:
+                self.proc.setwinsize(rows, cols)
 
     def close(self, force: bool = False) -> None:
         if self._closed:
             return
         self._closed = True
-        try:
-            if self.proc.isalive():
-                self.proc.terminate(force=force)
-            self.proc.close()
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                if self.proc.isalive():
+                    self.proc.terminate(force=force)
+                self.proc.close()
+            except Exception:
+                pass
 
     @property
     def display_name(self) -> str:
