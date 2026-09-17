@@ -101,6 +101,7 @@ def exec_expect(
     prompts: list[str] | None = None,
     timeout: float = 8.0,
     session_id: str | None = None,
+    interrupt_on_timeout: str | None = None,
 ) -> dict[str, Any]:
     """
     Execute a shell, REPL, or bootloader command and automatically wait for prompt to return.
@@ -125,7 +126,7 @@ def exec_expect(
         _, sess = manager.get_session(session_id)
     except KeyError as e:
         return {"success": False, "error": str(e), "output": "", "timeout": False}
-    return sess.exec_expect(command=command, prompts=prompts, timeout=timeout)
+    return sess.exec_expect(command=command, prompts=prompts, timeout=timeout, interrupt_on_timeout=interrupt_on_timeout)
 
 
 @mcp.tool()
@@ -136,6 +137,7 @@ def expect(
     poll_cmd: str | None = None,
     poll_interval: float = 0.05,
     session_id: str | None = None,
+    interrupt_on_timeout: str | None = None,
 ) -> dict[str, Any]:
     """
     Atomically send an optional command and match incoming stream against prompt patterns.
@@ -159,6 +161,7 @@ def expect(
         command=command,
         poll_cmd=poll_cmd,
         poll_interval=poll_interval,
+        interrupt_on_timeout=interrupt_on_timeout,
     )
 
 

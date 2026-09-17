@@ -192,3 +192,37 @@ def test_session_cross_chunk_backspace():
     session.close()
 
 
+
+
+def test_session_exec_expect_interrupt_on_timeout():
+    transport = PtyTransport(command=["bash", "--norc"])
+    session = InteractiveSession(transport=transport)
+
+    # Sync to initial prompt
+    session.expect([r"[\$#]\s*"], timeout=3.0)
+
+    # Run a blocking command and interrupt on timeout with \x03 (Ctrl+C)
+    res = session.exec_expect(
+        command="sleep 10",
+        prompts=[r"[\$#]\s*"],
+        timeout=0.8,
+        interrupt_on_timeout="\x03",
+    )
+
+    assert res["success"] is False
+    assert res["timeout"] is True
+    assert res["interrupted"] is True
+    assert res["prompt_recovered"] is True
+
+    # Terminal should be recovered and ready for next command
+    res2 = session.exec_expect(
+        command="echo AFTER_INTERRUPT",
+        prompts=[r"[\$#]\s*"],
+        timeout=3.0,
+    )
+    assert res2["success"] is True
+    assert "AFTER_INTERRUPT" in res2["output"]
+
+    session.close()
+
+

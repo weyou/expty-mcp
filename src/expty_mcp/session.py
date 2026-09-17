@@ -196,6 +196,7 @@ class InteractiveSession:
         command: str | None = None,
         poll_cmd: str | None = None,
         poll_interval: float = 0.05,
+        interrupt_on_timeout: str | None = None,
     ) -> dict[str, Any]:
         """
         Atomically send an optional command and match incoming stream against patterns.
@@ -226,8 +227,12 @@ class InteractiveSession:
                 with self.lock:
                     # Final match attempt on remaining buffer
                     for idx, pat in enumerate(compiled):
-                        match = pat.search(self.clean_buffer)
-                        if match:
+                        for match in pat.finditer(self.clean_buffer):
+                            if (
+                                command is not None
+                                and "\n" not in self.clean_buffer[: match.start()]
+                            ):
+                                continue
                             return self._build_match_result(match, patterns[idx], start_time)
 
                     return {
@@ -249,17 +254,61 @@ class InteractiveSession:
             # Pattern evaluation
             with self.lock:
                 for idx, pat in enumerate(compiled):
-                    match = pat.search(self.clean_buffer)
-                    if match:
+                    for match in pat.finditer(self.clean_buffer):
+                        if (
+                            command is not None
+                            and "\n" not in self.clean_buffer[: match.start()]
+                        ):
+                            continue
                         return self._build_match_result(match, patterns[idx], start_time)
 
             time.sleep(0.02)
 
         # Timeout reached
+        if interrupt_on_timeout is not None:
+            try:
+                intr_bytes = decode_escape_sequences(interrupt_on_timeout)
+                self.transport.write(intr_bytes)
+            except Exception as e:
+                logger.debug("Failed to send interrupt_on_timeout: %s", e)
+
+            # Wait for prompt recovery window
+            recovery_deadline = time.time() + 1.5
+            while time.time() < recovery_deadline:
+                if not self.transport.is_alive():
+                    break
+                with self.lock:
+                    for idx, pat in enumerate(compiled):
+                        for match in pat.finditer(self.clean_buffer):
+                            if (
+                                command is not None
+                                and "\n" not in self.clean_buffer[: match.start()]
+                            ):
+                                continue
+                            res = self._build_match_result(match, patterns[idx], start_time)
+                            res["matched"] = False
+                            res["timeout"] = True
+                            res["interrupted"] = True
+                            res["prompt_recovered"] = True
+                            return res
+                time.sleep(0.02)
+
+            with self.lock:
+                return {
+                    "matched": False,
+                    "timeout": True,
+                    "interrupted": True,
+                    "prompt_recovered": False,
+                    "output": self.clean_buffer,
+                    "elapsed_seconds": round(time.time() - start_time, 3),
+                }
+
         with self.lock:
             return {
                 "matched": False,
                 "timeout": True,
+                "interrupted": False,
+                "prompt_recovered": False,
                 "output": self.clean_buffer,
                 "elapsed_seconds": round(time.time() - start_time, 3),
             }
@@ -293,6 +342,7 @@ class InteractiveSession:
         command: str,
         prompts: list[str] | None = None,
         timeout: float = 8.0,
+        interrupt_on_timeout: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute a shell or REPL command, wait for prompt, and return structured result.
@@ -304,6 +354,8 @@ class InteractiveSession:
             - command (str): The command that was executed.
             - output (str): Terminal output between command dispatch and prompt match.
             - timeout (bool): True if the command timed out.
+            - interrupted (bool): True if an interrupt character was sent on timeout.
+            - prompt_recovered (bool): True if prompt recovered after interrupt.
             - process_exited (bool): True if the process exited before matching.
             - exit_code (int | None): Process exit code if exited.
             - elapsed_seconds (float): Wall-clock time taken.
@@ -317,7 +369,12 @@ class InteractiveSession:
             r"Password:\s*$",
         ]
         active_prompts = prompts if prompts else default_prompts
-        res = self.expect(patterns=active_prompts, timeout=timeout, command=command)
+        res = self.expect(
+            patterns=active_prompts,
+            timeout=timeout,
+            command=command,
+            interrupt_on_timeout=interrupt_on_timeout,
+        )
 
         if res.get("matched"):
             output = fold_backspaces(res.get("before", "").strip())
@@ -326,6 +383,8 @@ class InteractiveSession:
                 "command": command,
                 "output": output,
                 "timeout": False,
+                "interrupted": False,
+                "prompt_recovered": False,
                 "process_exited": False,
                 "exit_code": None,
                 "elapsed_seconds": res.get("elapsed_seconds", 0),
@@ -342,20 +401,31 @@ class InteractiveSession:
                 "command": command,
                 "output": fold_backspaces(res.get("output", "")),
                 "timeout": False,
+                "interrupted": False,
+                "prompt_recovered": False,
                 "process_exited": True,
                 "exit_code": exit_code,
                 "error": f"Process terminated ({status_msg}) while waiting for prompt.",
                 "elapsed_seconds": res.get("elapsed_seconds", 0),
             }
 
+        timeout_err = f"Command timed out after {timeout}s waiting for prompt."
+        if res.get("interrupted"):
+            if res.get("prompt_recovered"):
+                timeout_err += " Interrupt signal was sent and prompt was recovered."
+            else:
+                timeout_err += " Interrupt signal was sent but prompt did not recover."
+
         return {
             "success": False,
             "command": command,
             "output": fold_backspaces(res.get("output", "")),
             "timeout": True,
+            "interrupted": res.get("interrupted", False),
+            "prompt_recovered": res.get("prompt_recovered", False),
             "process_exited": False,
             "exit_code": None,
-            "error": f"Command timed out after {timeout}s waiting for prompt.",
+            "error": timeout_err,
             "elapsed_seconds": res.get("elapsed_seconds", 0),
         }
 
