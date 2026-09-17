@@ -53,3 +53,34 @@ def test_strip_ansi_with_pending():
     cleaned, pending = strip_ansi(text)
     assert cleaned == "OK done"
     assert pending == ""
+
+
+def test_fold_backspaces():
+    from expty_mcp.pipeline import fold_backspaces
+
+    # Case 1: Simple edit overwrite (e.g. u\buci)
+    assert fold_backspaces("u\buci show tinc") == "uci show tinc"
+
+    # Case 2: Redraw / syntax highlighting artifacts (e.g. \b i!\bp!\be...)
+    raw_redraw = (
+        "\b i!\bp!\be!\br!\bf!\b3!\b !\b-!\bc!\b !\b1!\b7!\b2!\b.!\b1!\b6!\b.!\b2!\b0!\b.!\b1!"
+        "\b !\b-!\bV!\b !\b-!\bt!\b !\b3!\b \b"
+    )
+    assert fold_backspaces(raw_redraw) == " iperf3 -c 172.16.20.1 -V -t 3 "
+
+    # Case 3: Multiline with backspaces
+    multiline = "line1\b1_ok\nline2_no_bs\nfoo\b\b\bbar"
+    assert fold_backspaces(multiline) == "line1_ok\nline2_no_bs\nbar"
+
+    # Case 4: No backspaces returns unchanged
+    assert fold_backspaces("plain text\nwith newline") == "plain text\nwith newline"
+
+
+def test_fold_backspaces_with_ansi():
+    from expty_mcp.pipeline import fold_backspaces
+    # ANSI color code combined with terminal backspace overwrite
+    colored_with_bs = "\x1b[32mu\x1b[0m\buci show"
+    cleaned, pending = strip_ansi(colored_with_bs)
+    folded = fold_backspaces(cleaned)
+    assert folded == "uci show"
+    assert pending == ""

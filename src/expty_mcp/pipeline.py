@@ -45,6 +45,38 @@ _ANSI_INCOMPLETE_RE = re.compile(
 )
 
 
+def fold_backspaces(text: str) -> str:
+    """
+    Simulate terminal cursor backspace (\\b / 0x08) movement and overwriting
+    within lines.
+
+    Handles cases where terminals/shells use cursor backspace to redraw or
+    overwrite text (e.g. 'u\\buci' -> 'uci', '\\b i!\\bp' -> ' ip').
+    """
+    if "\b" not in text:
+        return text
+
+    lines = text.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        if "\b" not in line:
+            cleaned_lines.append(line)
+            continue
+        buf: list[str] = []
+        pos = 0
+        for ch in line:
+            if ch == "\b":
+                pos = max(0, pos - 1)
+            else:
+                if pos < len(buf):
+                    buf[pos] = ch
+                else:
+                    buf.append(ch)
+                pos += 1
+        cleaned_lines.append("".join(buf))
+    return "\n".join(cleaned_lines)
+
+
 def strip_ansi(text: str, pending: str = "") -> tuple[str, str]:
     """
     Strip ANSI escape codes (colors, cursor movements, title bars, bracketed paste)

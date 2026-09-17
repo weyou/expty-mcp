@@ -166,3 +166,29 @@ def test_session_history_timestamps_and_50ms_rule():
     assert "↳ done" in rendered_history[2]
 
     session.close()
+
+
+def test_session_cross_chunk_backspace():
+    from unittest.mock import MagicMock
+
+    from expty_mcp.transport.base import BaseTransport
+
+    mock_transport = MagicMock(spec=BaseTransport)
+    mock_transport.is_alive.return_value = True
+    mock_transport.read_with_timestamp.return_value = (b"", time.time())
+    mock_transport.display_name = "mock"
+
+    session = InteractiveSession(transport=mock_transport)
+
+    # Chunk 1: "u"
+    session._append_data(b"u")
+    # Chunk 2: backspace and overwrite
+    session._append_data(b"\buci show tinc\n")
+
+    assert session.read_buffer() == "uci show tinc\n"
+    raw_history = session.get_history(limit=5, with_timestamps=False)
+    assert "uci show tinc" in raw_history
+
+    session.close()
+
+

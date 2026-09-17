@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-from .pipeline import decode_escape_sequences, strip_ansi
+from .pipeline import decode_escape_sequences, fold_backspaces, strip_ansi
 from .transport.base import BaseTransport
 
 logger = logging.getLogger(__name__)
@@ -320,7 +320,7 @@ class InteractiveSession:
         res = self.expect(patterns=active_prompts, timeout=timeout, command=command)
 
         if res.get("matched"):
-            output = res.get("before", "").strip()
+            output = fold_backspaces(res.get("before", "").strip())
             return {
                 "success": True,
                 "command": command,
@@ -340,7 +340,7 @@ class InteractiveSession:
             return {
                 "success": False,
                 "command": command,
-                "output": res.get("output", ""),
+                "output": fold_backspaces(res.get("output", "")),
                 "timeout": False,
                 "process_exited": True,
                 "exit_code": exit_code,
@@ -351,7 +351,7 @@ class InteractiveSession:
         return {
             "success": False,
             "command": command,
-            "output": res.get("output", ""),
+            "output": fold_backspaces(res.get("output", "")),
             "timeout": True,
             "process_exited": False,
             "exit_code": None,
@@ -365,7 +365,7 @@ class InteractiveSession:
             buf = self.clean_buffer
             if clear:
                 self.clean_buffer = ""
-            return buf
+            return fold_backspaces(buf)
 
     def get_history(self, limit: int = 50, with_timestamps: bool = True) -> list[str]:
         """
@@ -391,14 +391,14 @@ class InteractiveSession:
 
             target = entries[-limit:]
             if not with_timestamps:
-                return [e.text for e in target]
+                return [fold_backspaces(e.text) for e in target]
 
             results = []
             for e in target:
                 dt = datetime.datetime.fromtimestamp(e.timestamp)
                 time_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
                 prefix = "↳ " if e.is_continuation else ""
-                results.append(f"[{time_str}] {prefix}{e.text}")
+                results.append(f"[{time_str}] {prefix}{fold_backspaces(e.text)}")
             return results
 
     def close(self) -> None:
