@@ -343,6 +343,7 @@ class InteractiveSession:
         prompts: list[str] | None = None,
         timeout: float = 8.0,
         interrupt_on_timeout: str | None = None,
+        check_exit_code_cmd: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute a shell or REPL command, wait for prompt, and return structured result.
@@ -357,7 +358,7 @@ class InteractiveSession:
             - interrupted (bool): True if an interrupt character was sent on timeout.
             - prompt_recovered (bool): True if prompt recovered after interrupt.
             - process_exited (bool): True if the process exited before matching.
-            - exit_code (int | None): Process exit code if exited.
+            - exit_code (int | None): Exit code from probe or process exit.
             - elapsed_seconds (float): Wall-clock time taken.
         """
         default_prompts = [
@@ -378,6 +379,25 @@ class InteractiveSession:
 
         if res.get("matched"):
             output = fold_backspaces(res.get("before", "").strip())
+            exit_code = None
+            if check_exit_code_cmd:
+                probe_res = self.expect(
+                    patterns=active_prompts,
+                    timeout=min(2.0, timeout),
+                    command=check_exit_code_cmd,
+                )
+                if probe_res.get("matched"):
+                    probe_out = probe_res.get("before", "").strip()
+                    lines = [line.strip() for line in probe_out.splitlines() if line.strip()]
+                    for line in reversed(lines):
+                        if line.isdigit():
+                            exit_code = int(line)
+                            break
+                        m = re.search(r"^(-?\d+)$", line)
+                        if m:
+                            exit_code = int(m.group(1))
+                            break
+
             return {
                 "success": True,
                 "command": command,
@@ -386,7 +406,7 @@ class InteractiveSession:
                 "interrupted": False,
                 "prompt_recovered": False,
                 "process_exited": False,
-                "exit_code": None,
+                "exit_code": exit_code,
                 "elapsed_seconds": res.get("elapsed_seconds", 0),
             }
 

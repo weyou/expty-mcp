@@ -226,3 +226,31 @@ def test_session_exec_expect_interrupt_on_timeout():
     session.close()
 
 
+def test_session_exec_expect_check_exit_code():
+    transport = PtyTransport(command=["bash", "--norc"])
+    session = InteractiveSession(transport=transport)
+
+    # Sync to initial prompt
+    session.expect([r"[\$#]\s*"], timeout=3.0)
+
+    # Test exit code 0
+    res_zero = session.exec_expect(
+        command="true",
+        prompts=[r"[\$#]\s*"],
+        timeout=3.0,
+        check_exit_code_cmd="echo $?",
+    )
+    assert res_zero["success"] is True
+    assert res_zero["exit_code"] == 0
+
+    # Test exit code 1
+    res_one = session.exec_expect(
+        command="false",
+        prompts=[r"[\$#]\s*"],
+        timeout=3.0,
+        check_exit_code_cmd="echo $?",
+    )
+    assert res_one["success"] is True
+    assert res_one["exit_code"] == 1
+
+    session.close()

@@ -102,6 +102,7 @@ def exec_expect(
     timeout: float = 8.0,
     session_id: str | None = None,
     interrupt_on_timeout: str | None = None,
+    check_exit_code_cmd: str | None = None,
 ) -> dict[str, Any]:
     """
     Execute a shell, REPL, or bootloader command and automatically wait for prompt to return.
@@ -121,12 +122,22 @@ def exec_expect(
         prompts: Optional list of prompt patterns (defaults to standard shell and REPL prompts).
         timeout: Maximum seconds to wait for the prompt to return.
         session_id: Target session ID (defaults to currently active session).
+        interrupt_on_timeout: Optional character sequence to send if timeout occurs (e.g. "\\x03").
+        check_exit_code_cmd: Optional command to probe exit code after successful command completion
+            (e.g. "echo $?" for POSIX shell/bash/zsh, "$LASTEXITCODE" for PowerShell).
+            If provided, parses the integer exit code into 'exit_code'.
     """
     try:
         _, sess = manager.get_session(session_id)
     except KeyError as e:
         return {"success": False, "error": str(e), "output": "", "timeout": False}
-    return sess.exec_expect(command=command, prompts=prompts, timeout=timeout, interrupt_on_timeout=interrupt_on_timeout)
+    return sess.exec_expect(
+        command=command,
+        prompts=prompts,
+        timeout=timeout,
+        interrupt_on_timeout=interrupt_on_timeout,
+        check_exit_code_cmd=check_exit_code_cmd,
+    )
 
 
 @mcp.tool()
